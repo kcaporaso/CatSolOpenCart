@@ -1,0 +1,180 @@
+Index: controller/product/category.php
+===================================================================
+--- controller/product/category.php	(revision 84)
++++ controller/product/category.php	(working copy)
+@@ -106,10 +106,10 @@
+ 			
+ 	      $this->data['categories'] = array();
+     		
+-         $categories_results = $this->cache->get('categories'.'.'.$_SESSION['store_code'].'.'.$category_id);
++         //TURN OFF CACHE: $categories_results = $this->cache->get('categories'.'.'.$_SESSION['store_code'].'.'.$category_id);
+          if (!$categories_results) {
+ 		   	$categories_results = $this->model_catalog_category->getCategories($_SESSION['store_code'], $category_id);
+-            $this->cache->set('categories'.'.'.$_SESSION['store_code'].'.'.$category_id, $categories_results);
++            //TURN OFF CACHE: $this->cache->set('categories'.'.'.$_SESSION['store_code'].'.'.$category_id, $categories_results);
+          }
+ 	
+     		foreach ($categories_results as $categories_result) {
+Index: controller/checkout/confirm.php
+===================================================================
+--- controller/checkout/confirm.php	(revision 83)
++++ controller/checkout/confirm.php	(working copy)
+@@ -71,10 +71,12 @@
+ 			$this->load->model('total/' . $result['key']);
+ 
+ 			$this->{'model_total_' . $result['key']}->getTotal($total_data, $total, $taxes);
+-/*         echo 'Total_data<br/>';
++         /*
++         echo '<br/><br/>Total_data<br/>';
+ 		   print_r($total_data);	
+          echo 'Total<br/>';
+-         print_r($total);*/
++         print_r($total);
++         */
+ 		}
+ 		
+ 		$sort_order = array(); 
+Index: model/total/coupon.php
+===================================================================
+--- model/total/coupon.php	(revision 83)
++++ model/total/coupon.php	(working copy)
+@@ -6,7 +6,8 @@
+ 	public function getTotal (&$total_data, &$total, &$taxes, $order_id=null) {
+ 	    
+ 	    if ($order_id) {    // most likely called from back-end	        
+-	        $this->session->data['shipping_method'] = $this->session->data['order_id_'.$order_id]['shipping_method'];	        
++//	        $this->session->data['shipping_method'] = $this->session->data['order_id_'.$order_id]['shipping_method'];	        
++	        $this->session->data['coupon'] = $this->session->data['order_id_'.$order_id]['coupon'];	        
+ 	    }
+ 	    
+ 		if ((isset($this->session->data['coupon'])) && ($this->config->get('coupon_status'))) {
+@@ -105,7 +106,5 @@
+ 		}
+ 		
+ 	}
+-	
+-	
+ }
+-?>
+\ No newline at end of file
++?>
+Index: model/catalog/category.php
+===================================================================
+--- model/catalog/category.php	(revision 108)
++++ model/catalog/category.php	(working copy)
+@@ -8,7 +8,7 @@
+ 	    
+ 		$sql = "SELECT DISTINCT * FROM " . DB_PREFIX . "category c LEFT JOIN " . DB_PREFIX . "category_description cd ON (c.category_id = cd.category_id) WHERE c.store_code = '{$store_code}' AND c.category_id = '" . (int)$category_id . "' AND cd.language_id = '" . (int)$this->language->getId() . "'";
+ 		
+-//echo $sql;
++//echo "getCategorySQL: " . $sql;
+ 		$query = $this->db->query($sql);
+ 		return $query->row;
+ 		
+@@ -16,12 +16,39 @@
+ 	
+ 	
+ 	public function getCategories ($store_code, $parent_id = 0) {
++      // KMC have to get the store_id of the store_code.
++      $store_id = $this->getStoreIDFromCode($store_code);
++      $productset_ids = array();
++      $productset_ids_quoted = array();
++      $productset_ids = $this->get_productset_for_store($store_id);
++//print_r($productset_ids);
++//echo count($productset_ids);
++      $productset_ids_commasep = "";
++      if (count($productset_ids) == 1) { 
++         $productset_ids_commasep = "'" . $productset_ids[0]['productset_id'] . "'";
++      } else {
++         foreach ($productset_ids as $productset_id) {
++            $productset_ids_quoted[] = "'{$productset_id['productset_id']}'";
++         }
++         $productset_ids_commasep = implode(',', $productset_ids_quoted);
++      }
++//      echo $productset_ids_commasep;
++// KMC new category tied to productset_id code.
++      $sql = "select c.category_id, c.parent_id, cd.name,c.productset_id,c.store_code,c.enabled from category c
++                 inner join category_description cd on c.category_id = cd.category_id
++                 where c.store_code='{$store_code}' and c.parent_id='{$parent_id}' and c.enabled=1 and c.productset_id IN ({$productset_ids_commasep}) order by c.sort_order, cd.name ASC";
++
++echo '<!-- category sql:' . $sql .'-->';
++
++
+ // KMC attempt #2.
++/*
+       $sql = "select c.category_id, cd.name from category_to_productset ctp 
+               inner join category c on (ctp.category_id = c.category_id) and (ctp.store_code=c.store_code) 
+               inner join category_description cd on (c.category_id=cd.category_id) 
+               where ctp.enabled = 1 and c.parent_id='{$parent_id}' and ctp.store_code='{$store_code}'
+               order by c.sort_order, cd.name ASC";
++*/
+ /*
+ KMC attempt #1.
+       $sql = "SELECT * FROM category c 
+@@ -44,7 +71,6 @@
+ 				AND 	cd.language_id = '" . (int)$this->language->getId() . "' 
+ 			ORDER BY 	c.sort_order, cd.name ASC";
+ */
+-//echo '<!-- category sql:<br/>' . $sql .'--><br/>';
+ 		$query = $this->db->query($sql);
+ 		return $query->rows;
+ 		
+@@ -169,5 +195,17 @@
+       $result = $this->db->query($sql);
+       return $result->row['category_id'];
+    }
++
++   private function getStoreIDFromCode ($store_code) {
++      $found = $this->db->get_multiple('store', "code = '{$store_code}'");
++      return $found[0]['store_id'];
++   }   
++
++   private function get_productset_for_store($store_id) {
++      $psets = $this->db->query("select ps.productset_id from store_productsets sp inner join productset ps on sp.productset_id = ps.productset_id where store_id='{$store_id}'");
++      return $psets->rows;
++   }   
++
++
+ }
+ ?>
+Index: view/theme/default/stylesheet/master.css
+===================================================================
+--- view/theme/default/stylesheet/master.css	(revision 100)
++++ view/theme/default/stylesheet/master.css	(working copy)
+@@ -59,7 +59,6 @@
+ }
+ .events {
+ 	position: relative;
+-   z-index:2000;
+ }
+ .events ul {
+ 	z-index: 1000;
+@@ -84,14 +83,13 @@
+ 	padding-bottom: 5px;
+ }
+ .events li span {
+-   z-index: 1125;
+ 	display: block;
+ 	font-size: 12px;
+ 	text-align: justify;
+ 	color: #555;
+ }
+ .events li span.title {
+-   z-index: 1150;
++   z-index: 1000;
+ 	font-weight: bold;
+ 	color: #222;
+ }
+Index: view/theme/default/stylesheet/PIG_stylesheet.php
+===================================================================
+--- view/theme/default/stylesheet/PIG_stylesheet.php	(revision 101)
++++ view/theme/default/stylesheet/PIG_stylesheet.php	(working copy)
+@@ -119,7 +119,7 @@
+ 	padding-left: 10px;
+ 	padding-right: 10px;
+ 	height: 40px;
+-	background: url('<?php echo HTTPS_IMAGE .'stores/'.$store_code ?>/nav_background.png') repeat-x;
++	background: #999;
+ }
+ #header .div4 img {
+ 	float: left;

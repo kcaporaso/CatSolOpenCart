@@ -1,0 +1,1618 @@
+Index: model/shipping/subtotalbased.php
+===================================================================
+--- model/shipping/subtotalbased.php	(revision 191)
++++ model/shipping/subtotalbased.php	(working copy)
+@@ -50,15 +50,16 @@
+ 					$effective_cost = 0;
+                // KMC - Gift Certs - 07/27/2010
+                // Give me the subtotal of items that ship.
+-               if ($order_id) {
++               //if ($order_id) {
+                   // If we have an order_id, then get the already placed order sub-total, which will contain
+                   // discounts and the such. 
+-                  $this->load->model('customer/order');
+-                  $subtotal = $this->model_customer_order->getSubtotalForProducts($order_id);
+-               } else {
++               //   $this->load->model('customer/order');
++               //   $subtotal = $this->model_customer_order->getSubtotalForProducts($order_id);
++               //} else {
+ 					   //Future Gift Cert Work: $subtotal = floatval($this->cart->getShippableSubTotal());
+ 					   $subtotal = floatval($this->cart->getSubTotal());
+-               }
++               //}
++               //
+ 					//Original, pre-GiftCert call : $subtotal = floatval($this->cart->getSubTotal());
+ 				
+ 					$rates = explode("\n", $this->config->get('subtotalbased_' . $result['geo_zone_id'] . '_rate'));
+@@ -97,6 +98,15 @@
+ 					
+ 					if ((int)$effective_cost) {
+ 
++                  /* KMC : 08/03/2010 : Override the effective_cost and use what we get from the original order
++                   * placed.  This only happens from the admin order screen, hence order_id.
++                   */
++                  if ($order_id) {
++                     $this->load->model('customer/order');
++                     $effective_cost = $this->model_customer_order->getOrderShippingCharge($order_id);
++                     echo '<!--'.$effective_cost.'-->';
++                  }
++
+       				$quote_data['subtotalbased_' . $result['geo_zone_id']] = array(
+         					'id'           => 'subtotalbased.subtotalbased_' . $result['geo_zone_id'],
+         					'title'        => $result['name']." Shipping",
+Index: model/total/shipping.php
+===================================================================
+--- model/total/shipping.php	(revision 91)
++++ model/total/shipping.php	(working copy)
+@@ -20,7 +20,7 @@
+ 			);
+ 
+ /*	KMC 6/11/2010
+- *	Don't tax shipping!
++ *	We don't tax shipping!
+  *	I don't understand this!
+  *	  		if ($this->session->data['shipping_method']['tax_class_id']) {
+ 				if (!isset($taxes[$this->session->data['shipping_method']['tax_class_id']])) {
+Index: model/checkout/order.php
+===================================================================
+--- model/checkout/order.php	(revision 133)
++++ model/checkout/order.php	(working copy)
+@@ -26,6 +26,11 @@
+       		$this->db->query("DELETE FROM " . DB_PREFIX . "order_total WHERE order_id = '" . (int)$result['order_id'] . "'");
+ 		}
+ 		// end cleanup
++
++      // KMC Do we have any Gift Certs in the order?  These MUST have product_id of '999999x' ONLY.
++      // Nothing else will be considered a Gift Cert.
++      //foreach ($data['products'] as $product) {
++      //}      
+ 		
+ 		$this->db->query("
+ 			INSERT INTO `" . DB_PREFIX . "order` 
+@@ -126,12 +131,12 @@
+ 			$message .= $language->get('mail_new_order_order_status') . ' ' . @$order_status_query->row['name'] . "\n\n";
+ 			$message .= $language->get('mail_new_order_product') . "\n";
+ 			
+-			foreach ($order_product_query->rows as $result) {
+-				$message .= $result['quantity'] . 'x ' . $language->clean_string($result['name']) . ' (' . $result['model'] . ') ' . $this->currency->format($result['total'], $order_query->row['currency'], $order_query->row['value']) . "\n";
++			foreach ($order_product_query->rows as $result) { // here we have to resolve odd html chars.
++				$message .= $result['quantity'] . 'x ' . $language->clean_store_name($result['name']) . ' (' . $result['model'] . ') ' . $this->currency->format($result['total'], $order_query->row['currency'], $order_query->row['value']) . "\n";
+ 			}
+ 			
+ 			$message .= "\n";
+-			
++
+ 			$message .= $language->get('mail_new_order_total') . "\n";
+ 			
+ 			foreach ($order_total_query->rows as $result) {
+@@ -183,6 +188,11 @@
+ 				}			
+ 				
+ 				$message .= "\n";
++
++            // KMC : Add tax_exempt stuff here.
++            if ($this->customer->isTaxExempt()) {
++               $message .= "NOTE: Tax Exempt Customer\n\n";
++            }
+ 				
+ 				if ($order_download_query->num_rows) {
+ 					$message .= $language->get('mail_new_order_download') . "\n";
+Index: model/catalog/product.php
+===================================================================
+--- model/catalog/product.php	(revision 200)
++++ model/catalog/product.php	(working copy)
+@@ -45,7 +45,7 @@
+ 					{$PVGrouper_phrase}
+ 					{$gradelevels_display_clause}
+ 					
+-					MIN( IF((SP.price IS NOT NULL AND SP.price > 0), SP.price, p.price) ) as price,
++					IF((SP.price IS NOT NULL AND SP.price > 0), SP.price, p.price) as price,
+ 					SP.quantity,
+ 					SP.stock_status_id,					
+ 					SP.tax_class_id
+@@ -743,7 +743,8 @@
+ 
+ 		//if (!$product) {
+ 		     	//{$this->getProductSelectFields($store_code)},
+-           $qstring = "SELECT	 DISTINCT p.product_id, p.image, p.manufacturer_id, p.weight, p.weight_class_id, p.ext_product_num, '1' as shipping, '1' as status, '2001-01-01' as date_available, p.date_added, p.date_modified, p.price, SP.quantity, SP.stock_status_id,	 SP.tax_class_id, pd.name as name
++      $qstring = "SELECT	 DISTINCT p.product_id, p.image, p.manufacturer_id, p.weight, p.weight_class_id, p.ext_product_num, '1' as shipping, '1' as status, '2001-01-01' as date_available, p.date_added, p.date_modified, 
++               IF((SP.price IS NOT NULL AND SP.price > 0), SP.price, p.price) as price, SP.quantity, SP.stock_status_id,	 SP.tax_class_id, pd.name as name
+   				   FROM " . DB_PREFIX . "product p
+     				INNER JOIN productset_product as PP
+     					ON (p.product_id = PP.product_id)
+@@ -808,7 +809,7 @@
+ 
+ 	public function getFeaturedProductsForCategoryId($store_code, $limit, $parent_category) { 
+ //echo '<!--m/c/p/getFeaturedProductsForCategoryId-->';
+-     $qstring ="select pd.name as name, p.product_id, p.image, p.manufacturer_id, p.ext_product_num, p.date_added, p.date_modified, p.price  
++     $qstring ="select pd.name as name, p.product_id, p.image, p.manufacturer_id, p.ext_product_num, p.date_added, p.date_modified, IF((sp.price IS NOT NULL AND sp.price > 0), sp.price, p.price) as price
+      from store s 
+      inner join store_productsets sps on sps.store_id = s.store_id
+      inner join category c on c.productset_id = sps.productset_id and c.store_code='{$store_code}' and c.parent_id='{$parent_category}'
+@@ -908,7 +909,7 @@
+ 	        $product_ids_values_clause = " AND p.product_id NOT IN ({$product_ids_to_exclude}) ";
+ 	    }
+ 		    
+-       $qstring ="select pd.name as name, p.product_id, p.image, p.manufacturer_id, p.ext_product_num, p.date_added, p.date_modified, p.price  
++       $qstring ="select pd.name as name, p.product_id, p.image, p.manufacturer_id, p.ext_product_num, p.date_added, p.date_modified, IF((sp.price IS NOT NULL AND sp.price > 0), sp.price, p.price) as price
+     from store s 
+     inner join store_productsets sps on sps.store_id = s.store_id
+     inner join category c on c.productset_id = sps.productset_id and c.store_code='{$store_code}' and c.parent_id='{$parent_category}'
+@@ -928,56 +929,13 @@
+       return $product;
+    }
+ 
+-   /**
+-    * ABOUT TO PHASE THIS OLD METHOD OUT... see above. 
+-    */
+-   public function _getRandomProductsForCategoryId($store_code, $limit=8, $product_ids_to_exclude=array(), $parent_category)
+-   {
+-//echo '<!--m/c/p/getRandomProductsForCategoryId-->';
+-	    if (!empty($product_ids_to_exclude)) {
+-	        $product_ids_to_exclude = implode(', ', $product_ids_to_exclude);
+-	        $product_ids_values_clause = " AND p.product_id NOT IN ({$product_ids_to_exclude}) ";
+-	    }
+-		    
+-       $qstring ="SELECT DISTINCT	". 	//{$this->getProductSelectFields($store_code)},
+-       "p.product_id, p.image, p.manufacturer_id, p.weight, p.weight_class_id, p.ext_product_num, '1' as shipping, '1' as status, '2001-01-01' as date_available, p.date_added, p.date_modified, p.price, SP.quantity, SP.stock_status_id,	 SP.tax_class_id, pd.name as name" .
+-	//						pd.name AS name
+-"			FROM " . DB_PREFIX . "product p
+-			
+-				INNER JOIN productset_product as PP
+-					ON (p.product_id = PP.product_id)
+-/*				INNER JOIN store_productsets as SPS
+-					ON (PP.productset_id = SPS.productset_id)
+-				INNER JOIN store as S
+-            ON (SPS.store_id = S.store_id AND S.code = '{$store_code}') */
+-				INNER JOIN store_product as SP
+-					ON (p.product_id = SP.product_id AND SP.excluded_flag = '0' AND SP.store_code = '{$store_code}')
+-            INNER JOIN product_to_category as PC
+-               ON (p.product_id = PC.product_id AND SP.store_code = '{$store_code}') 
+-            INNER JOIN category as C
+-               ON (PC.category_id = C.category_id AND C.parent_id = '{$parent_category}' AND (p.productset_id = PC.productset_id))
+-            LEFT JOIN product_description pd ON (p.product_id = pd.product_id)
+-			WHERE 		1
+-			{$product_ids_values_clause}
+-       /*ORDER BY RAND()*/
+-			LIMIT 
+-		" . (int)$limit;
+-	 	 
+-		$query = $this->db->query($qstring);
+-//echo '<!--'.$qstring.'-->';
+-		$product = $query->rows;
+-//print_r($product);
+-      return $product;
+-   }
+-	
+-	
+ 	public function get_random_products ($store_code, $limit=8, $product_ids_to_exclude=array()) {	  
+ //echo '<!--m/c/p/get_random_products-->';
+ 	    if (!empty($product_ids_to_exclude)) {
+ 	        $product_ids_to_exclude = implode(', ', $product_ids_to_exclude);
+ 	        $product_ids_values_clause = " AND p.product_id NOT IN ({$product_ids_to_exclude}) ";
+ 	    }
+-		$sql = "SELECT DISTINCT p.product_id, p.image, p.manufacturer_id, p.weight, p.weight_class_id, p.ext_product_num, '1' as shipping, '1' as status, '2001-01-01' as date_available, p.date_added, p.date_modified, p.price, SP.quantity, SP.stock_status_id,	 SP.tax_class_id, pd.name as name
++		$sql = "SELECT DISTINCT p.product_id, p.image, p.manufacturer_id, p.weight, p.weight_class_id, p.ext_product_num, '1' as shipping, '1' as status, '2001-01-01' as date_available, p.date_added, p.date_modified, IF((SP.price IS NOT NULL AND SP.price > 0), SP.price, p.price) as price, SP.quantity, SP.stock_status_id,	 SP.tax_class_id, pd.name as name
+ 			FROM " . DB_PREFIX . "product p
+ 				INNER JOIN productset_product as PP
+ 					ON (p.product_id = PP.product_id)
+@@ -1195,7 +1153,7 @@
+           // We will need the store price to calculate the discounted price:
+           $s = "select p.product_id, sp.price AS storeprice, p.price as productprice 
+                 from (product p join store_product sp) 
+-                where (1 and (p.product_id = '{$product_id}' and sp.store_code='{$store_code}')) 
++                where (p.product_id=sp.product_id and (p.product_id = '{$product_id}' and sp.store_code='{$store_code}')) 
+                 group by sp.store_code,p.product_id";
+           $query_price = $this->db->query($s);
+           $sp_price = $query_price->row['storeprice'];
+@@ -1210,7 +1168,6 @@
+ 	    if ($group_by_tag) {
+     	    $tag = $this->db->get_column('product_variant_grouper', "tag", "product_id = '{$product_id}'");
+     	    
+-    	    // this reads ultimately from table global_special
+           $sql = "select ps.product_id, ps.price as product_special from product_special ps 
+                   inner join product_variant_grouper pvg 
+                   on (ps.product_id=pvg.product_id and ps.store_code = '{$store_code}')
+@@ -1325,115 +1282,6 @@
+       }
+    }
+ 
+-   // NOT USING ANYMORE...
+-	public function __getProductSpecials ($store_code, $sort = 'pd.name', $order = 'ASC', $start = 0, $limit = 20, $count_only=false) {
+-//echo '<!-- WE RAN getProductSpecials() -->';
+-        if ($count_only) {
+-            $select_phrase = "COUNT(*) as totnum";
+-        } else {	    
+-	        $select_phrase = "
+-                {$this->getProductSelectFields($store_code, true)},
+-				IF (PVG1.name, PVG1.name, pd.name) AS name,				
+-				PSG2.product_special as special,				
+-				m.name AS manufacturer, 
+-				ss.name AS stock, 
+-
+-				(	SELECT AVG(r.rating) 
+-    				FROM " . DB_PREFIX . "review r 
+-    				WHERE 		1
+-    					AND		p.product_id = r.product_id
+-    					AND		r.store_code = '{$store_code}'
+-    				GROUP BY r.product_id	) AS rating
+-	        ";
+-        }
+-	    
+-		$sql = "
+-			SELECT 	{$select_phrase}						
+-						
+-			FROM		product as p
+-			
+-						INNER JOIN product_specials_global_2 as PSG2
+-							ON (PSG2.store_code = '{$store_code}' AND PSG2.product_id = p.product_id)
+-							
+-        				INNER JOIN productset_product as PP
+-        					ON (p.product_id = PP.product_id)
+-        				INNER JOIN store_productsets as SPS
+-        					ON (PP.productset_id = SPS.productset_id)
+-        				INNER JOIN store as S
+-        					ON (SPS.store_id = S.store_id AND S.code = '{$store_code}')
+-        				INNER JOIN store_product as SP
+-        					ON (p.product_id = SP.product_id AND SP.excluded_flag = '0' AND SP.store_code = '{$store_code}')
+-        				INNER JOIN product_variant_grouper as PVG
+-        					ON (p.product_id = PVG.product_id)	
+-        					
+-                        LEFT JOIN product_variant_group as PVG1
+-                        	ON (p.productvariantgroup_id = PVG1.id)     
+-                        	   					
+-        				LEFT JOIN product_gradelevels_display as PGLD
+-        					ON (p.product_id = PGLD.product_id)    
+-					
+-        				LEFT JOIN productvariantgroup_gradelevels_display as PVGGLD
+-        					ON (p.productvariantgroup_id = PVGGLD.productvariantgroup_id)        					
+-
+-						LEFT JOIN " . DB_PREFIX . "product_description pd 
+-							ON (p.product_id = pd.product_id) 
+-						LEFT JOIN " . DB_PREFIX . "manufacturer m 
+-							ON (p.manufacturer_id = m.manufacturer_id) 
+-						LEFT JOIN " . DB_PREFIX . "stock_status ss 
+-							ON (SP.stock_status_id = ss.stock_status_id) 
+-			WHERE 		1
+-				/* AND	ps.date_start < NOW() */
+-				/* AND 	ps.date_end > NOW() */
+-				/* AND 	p.status = '1' */
+-				/* AND 	p.date_available <= NOW() */
+-				AND 	pd.language_id = '" . (int)$this->language->getId() . "' 
+-				AND 	ss.language_id = '" . (int)$this->language->getId() . "'
+-				AND		( 	PSG2.original_special IS NOT NULL
+-							AND
+-							( 	PSG2.globally_discounted_price IS NULL 
+-									OR
+-								PSG2.original_special < PSG2.globally_discounted_price
+-							)
+-						)			
+-		";
+-		
+-		$sql .= "GROUP BY p.product_id";
+-
+-		if ($count_only) {
+-		    
+-		    $result = $this->db->query($sql);
+-		    
+-		    return $result->num_rows;
+-		    
+-		} else {
+-
+-    		$sort_data = array(
+-    			'pd.name',
+-    			'price',
+-    			'special',
+-    			'rating'
+-    		);	
+-    			
+-    		if (in_array($sort, $sort_data)) {
+-    			$sql .= " ORDER BY " . $sort;
+-    		} else {
+-    			$sql .= " ORDER BY pd.name";	
+-    		}
+-    			
+-    		if ($order == 'DESC') {
+-    			$sql .= " DESC";
+-    		} else {
+-    			$sql .= " ASC";
+-    		}
+-    			
+-    		$sql .= " LIMIT " . (int)$start . "," . (int)$limit;
+-//echo '<!-- SPECIALS SQL: ' . $sql . '-->';    		
+-    		$query = $this->db->query($sql);
+-    		
+-		    return $query->rows;
+-		}
+-	}	
+-	
+ 	public function getTotalProductSpecials ($store_code) {
+ 	    
+ 		return $this->getProductSpecials($store_code, null, null, null, null, true);
+@@ -1512,7 +1360,7 @@
+     			p.product_variation,
+     			p.product_variant,
+     			SP.quantity,
+-        		FORMAT(IF((SP.price IS NOT NULL AND SP.price > 0), SP.price, p.price), 2) as price,
++        		IF((SP.price IS NOT NULL AND SP.price > 0), SP.price, p.price) as price,
+     			ss.name AS stock,
+     			PGLD.name as gradelevels_display 
+     				
+Index: model/account/customer.php
+===================================================================
+--- model/account/customer.php	(revision 83)
++++ model/account/customer.php	(working copy)
+@@ -38,6 +38,8 @@
+       					password = '" . $this->db->escape(md5(@$data['password'])) . "', 
+       					newsletter = '" . $this->db->escape(@$data['newsletter']) . "', 
+       					status = '1',
++      					tax_id = '" . $this->db->escape(@$data['taxid']) . "', 
++      					schoolname = '" . $this->db->escape(@$data['schoolname']) . "', 
+       					{$default_customer_group_id_phrase}
+       					date_added = NOW()
+       	");
+@@ -54,16 +56,18 @@
+ 	
+ 	
+ 	public function editCustomer ($data) {
+-	    
+-		$this->db->query("
+-			UPDATE " . DB_PREFIX . "customer 
++		$sql="UPDATE " . DB_PREFIX . "customer 
+ 			SET 	firstname = '" . $this->db->escape(@$data['firstname']) . "', 
+ 					lastname = '" . $this->db->escape(@$data['lastname']) . "', 
+ 					email = '" . $this->db->escape(@$data['email']) . "', 
+ 					telephone = '" . $this->db->escape(@$data['telephone']) . "', 
+-					fax = '" . $this->db->escape(@$data['fax']) . "' 
+-			WHERE 	customer_id = '" . (int)$this->customer_id . "'
+-		");
++					fax = '" . $this->db->escape(@$data['fax']) . "' ,
++					tax_id = '" . $this->db->escape(@$data['taxid']) . "' ,
++					schoolname = '" . $this->db->escape(@$data['schoolname']) . "'
++			WHERE 	customer_id = '" . (int)$this->customer->getId() . "'
++		";
++      //echo $sql;
++		$this->db->query($sql);
+ 	
+ 	}
+ 	
+@@ -103,4 +107,4 @@
+ }
+ 
+ 
+-?>
+\ No newline at end of file
++?>
+Index: controller/product/category.php
+===================================================================
+--- controller/product/category.php	(revision 197)
++++ controller/product/category.php	(working copy)
+@@ -167,6 +167,7 @@
+ 
+             // Loop each result of the product set!!
+         		foreach ($results as $result) {
++//echo '<!--price:'.$result['price'].'-->';                    
+ 					if ($result['image']) {
+ 						$image = $result['image'];
+ 					} else {
+@@ -178,7 +179,7 @@
+ 					$special = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $result['product_id'], false);
+ //echo '<!--special:'.$special.'-->';
+ 					if ($special) {
+-						$special = $this->currency->format($this->tax->calculate($special, $result['tax_class_id'], $this->config->get('config_tax')));
++						$special = $special; //$this->currency->format($this->tax->calculate($special, $result['tax_class_id'], $this->config->get('config_tax')));
+ 					} else {
+ 						$special = FALSE;
+ 					}
+@@ -190,58 +191,37 @@
+ 						$this->data['cust_group_id'] = $this->customer->getGroupID();
+ 						$this->data['cust_tax_class'] = $this->customer->getGroupTaxClass();
+ 						$this->data['cust_discount'] = $this->customer->getGroupDiscount();
++                  $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $result['product_id']);
+                   //echo "<!-- category_id: " . $category_id . "-->";
+-                  // KMC
+-                  $this->data['category_discounts'] = $this->customer->getCategoryDiscounts();
+-                  $this->data['category_id'] = $category_id;
+-                  $have_category_discounts = false;
+-                  $discount_pct = 0;
+-                  // Do we actually have any discounts in this category for the customer?
+-                  if ($this->data['category_discounts']>0) {
+-                     foreach ($this->data['category_discounts'] as $cat_discount) {
+-                        if (array_key_exists($category_id, $cat_discount)) {
+-                           $have_category_discounts = true;
+-                           $discount_pct = $cat_discount[$category_id];
+-                           //echo "<!-- cat_discount/pct: " . $cat_discount[$category_id] . "/" . $discount_pct . "-->";
+-                           break;
+-                        }
+-                     }
+-                     $this->data['discount_pct'] = $discount_pct;
+-                  }
+-						
+-                  if ($have_category_discounts) {
+-							$this->data['products'][] = array(
+-								'name' => $this->language->clean_string($result['name']),
+-							   'gradelevels_display' => $result['gradelevels_display'],
+-								'ext_product_num' => $result['ext_product_num'],
+-								'rating' => $rating,
+-								'stars' => sprintf($this->language->get('text_stars'), $rating),
+-								'thumb' => $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+-								//'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($discount_pct*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-								'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-								'special' => NULL,
+-								'product_id' => $result['product_id'],
+-								'pvg_id' => $result['productvariantgroup_id'],
+-								'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&path=' . $this->request->get['path'] . '&product_id=' . $result['product_id'])),
+-                        'cat_discount_price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($discount_pct*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax')))
+-							);
++                
++                  $discount_pct = 0; 
++                  if ($this->customer->hasCategoryDiscount($category_id, $discount_pct))
++                  {  
++                     // If our category discount is > then a group discount use it.
++                     if ($discount_pct > $this->data['cust_discount']) {
++                        $this->data['cust_discount'] = $discount_pct;
++                     }  
++                     //echo '<!--disc:'.$this->data['cust_discount'].'-->';
++                     // Calculate what should go into the "special" field below.
++                     $cat_discount_price = $result['price']-($result['price']*($this->data['cust_discount']*.01));
++                     //echo '<!--cat_disc_price'.$cat_discount_price.'-->';
++                     if ($cat_discount_price < $special || !$special) { $special = $cat_discount_price; }
++                  }  
+ 
+-                  } else if ($this->data['cust_discount']>0) {
++                  if ($this->data['cust_discount']>0) {
+ //echo '<!-- cust_discount gt 0 -->';						
+ 							$this->data['products'][] = array(
+-								//'name' => $result['name'],
+ 								'name' => $this->language->clean_string($result['name']),
+ 							   'gradelevels_display' => $result['gradelevels_display'],
+ 								'ext_product_num' => $result['ext_product_num'],
+ 								'rating' => $rating,
+ 								'stars' => sprintf($this->language->get('text_stars'), $rating),
+ 								'thumb' => $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+-								'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-								'special' => NULL,
++								'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
++								'special' => $special ? $this->currency->format($special) : $special,
+ 								'product_id' => $result['product_id'],
+ 								'pvg_id' => $result['productvariantgroup_id'],
+-								'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&path=' . $this->request->get['path'] . '&product_id=' . $result['product_id'])),
+-                        'cat_discount_price' => NULL 
++								'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&path=' . $this->request->get['path'] . '&product_id=' . $result['product_id']))
+ 							);
+ 						
+ 						} else {
+@@ -255,7 +235,7 @@
+ 								'stars' => sprintf($this->language->get('text_stars'), $rating),
+ 								'thumb' =>  $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+ 								'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-								'special' => $special,
++								'special' => $special ? $this->currency->format($special) : $special,
+ 								'product_id' => $result['product_id'],
+ 								'pvg_id' => $result['productvariantgroup_id'],
+ 								'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&path=' . $this->request->get['path'] . '&product_id=' . $result['product_id'])),
+@@ -274,7 +254,7 @@
+ 							'stars' => sprintf($this->language->get('text_stars'), $rating),
+ 							'thumb' =>  $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+ 							'price' => $this->currency->format($this->tax->calculate($result['price'], $result['tax_class_id'], $this->config->get('config_tax'))),
+-							'special' => $special,
++						   'special' => $special ? $this->currency->format($special) : $special,
+ 							'product_id' => $result['product_id'],
+ 							'pvg_id' => $result['productvariantgroup_id'],
+ 							'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&path=' . $this->request->get['path'] . '&product_id=' . $result['product_id']))
+Index: controller/product/product.php
+===================================================================
+--- controller/product/product.php	(revision 175)
++++ controller/product/product.php	(working copy)
+@@ -25,7 +25,7 @@
+ 		$this->load->model('catalog/category');	
+ 	   $category_id = '';	
+ 		// Categories
+-      	if (isset($this->request->get['path'])) {
++      if (isset($this->request->get['path'])) {
+ 			$path = '';
+ 
+          // KMC :
+@@ -47,7 +47,7 @@
+            			'separator' => $this->language->get('text_separator')
+         		);
+         	}			
+-      	}
++     	}
+ //echo 'cat:' . $category_id;		
+ 		$this->load->model('catalog/manufacturer');	
+ 		
+@@ -157,6 +157,14 @@
+ 
+ 			$this->data['action'] = $this->url->http('checkout/cart');
+ 
++			$special = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $product_info['product_id'], false);
++			if ($special) {
++            $special = $special;
++			} else {
++				$special = FALSE;
++			}
++         $discount_pct = 0; 
++
+          //KMC Major Change 06/03/2010
+          //KMC Set up for a logged user early on
+ 		   if ($this->customer->isLogged()) {
+@@ -164,6 +172,23 @@
+ 				$this->data['cust_tax_class'] = $this->customer->getGroupTaxClass();
+ 				$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+ 
++          
++            $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $product_info['product_id']); 
++            if ($this->customer->hasCategoryDiscount($category_id, $discount_pct))
++            {  
++               // If our category discount is > then a group discount use it.
++               if ($discount_pct > $this->data['cust_discount']) {
++                  $this->data['cust_discount'] = $discount_pct;
++               }  
++               //echo '<!--disc:'.$this->data['cust_discount'].'-->';
++               // Calculate what should go into the "special" field below.
++               $cat_discount_price = $product_info['price']-($product_info['price']*($this->data['cust_discount']*.01));
++               //echo '<!--cat_disc_price'.$cat_discount_price.'-->';
++               if ($cat_discount_price < $special || !$special) { $special = $cat_discount_price; }
++            }  
++
++///OLD
++/*
+             $this->data['category_discounts'] = $this->customer->getCategoryDiscounts();
+             if (empty($category_id)) { 
+                $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $product_info['product_id']);
+@@ -182,6 +207,9 @@
+                }       
+                $this->data['discount_pct'] = $discount_pct;
+             }       
++*/
++////OLD-END
++
+          }//isLogged	
+ 
+ 			if ($product_info['productvariantgroup_id']) {
+@@ -209,31 +237,26 @@
+ 			        
+ 			        $this->data['product_variants'][$key]['price'] = $this->currency->format($this->data['product_variants'][$key]['price']);
+ 			        
+-echo "<!--price: " . $var_price . "-->";
+-//echo "<!--disc price: " . number_format($this->data['product_variants'][$key]['price']*($this->data['discount_pct']*.01),2) . "-->";
+-//echo "<!--disc : " . $var_price*($this->data['discount_pct']*.01) . "-->";
++			        $variant_special = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $row['product_id'], false);
++                 if (!$variant_special) { $variant_special = FALSE; }
++
+                  /* determine the better price ... global discount or if individual discount if logged in */
+                  if ($this->customer->isLogged()) {
+-                             
+-			           if ($this->data['have_category_discounts']) {
+-                       $cat_discount_price = $var_price-($var_price*($this->data['discount_pct']*.01));
+-//                       $this->data['product_variants'][$key]['special'] = $this->currency->format($cat_discount_price);
+-                       $this->data['product_variants'][$key]['special'] = $cat_discount_price;
+-                    } else {
+-			              $this->data['product_variants'][$key]['special'] = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $row['product_id'], false);
+-                    }
+-                 } else { 
+-			           $this->data['product_variants'][$key]['special'] = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $row['product_id'], false);
+-                 }
++			           if ($this->data['cust_discount']) {
++                       $variant_discount_price = $var_price-($var_price*($this->data['cust_discount']*.01));
+ 
+-			        if ($this->data['product_variants'][$key]['special']) {
+-			            $this->currency->format($this->data['product_variants'][$key]['special']);
+-			        }
+-echo "<!--disc  price: " . $this->data['product_variants'][$key]['special'] . "-->";
++                       if ($variant_discount_price < $variant_special || !$variant_special) {
++                          $variant_special = $variant_discount_price;
++                       } 
++                    } 
++                 } 
++			        $this->data['product_variants'][$key]['special'] = $variant_special ? $this->currency->format($variant_special) : $variant_special;
++
++//echo "<!--disc  price: " . $this->data['product_variants'][$key]['special'] . "-->";
+ 			    }
+ 			    
+ 			    $this->data['gradelevels_are_different'] = $gradelevels_are_different;
+-			}
++			} // end-productvariantgroup_id
+ 			
+ 			$this->load->helper('image');
+ 			
+@@ -242,14 +265,12 @@
+ 			} else {
+ 				$image = 'no_image.jpg';
+ 			}	
+-//echo 'img: ' . $image;
+ 					
+ 			$this->data['popup'] = HelperImage::resize($image, $this->config->get('config_image_popup_width'), $this->config->get('config_image_popup_height'));
+ 	  		$this->data['thumb'] = HelperImage::resize($image, $this->config->get('config_image_thumb_width'), $this->config->get('config_image_thumb_height'));
+ 
+-//echo 'thumb: ' . $this->data['thumb'];
+ 	  		
+-            $this->load->helper('media');
++         $this->load->helper('media');
+ 			$product_media_rows = $this->model_catalog_product->getProductMedia($this->request->get['product_id']);
+ //var_dump($product_media_rows);
+ 			
+@@ -262,6 +283,7 @@
+ 			
+ 			if ($this->customer->isLogged()) {
+ 			
++            /*
+ 				$this->data['cust_group_id'] = $this->customer->getGroupID();
+ 				$this->data['cust_tax_class'] = $this->customer->getGroupTaxClass();
+ 				$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+@@ -284,68 +306,37 @@
+                }       
+                $this->data['discount_pct'] = $discount_pct;
+             }       
+-echo '<!-- discout pct: ' . $this->data['discount_pct'] . '-->';
+-echo '<!-- have discout: ' . $this->data['have_category_discounts'] . '-->';
++//echo '<!-- discout pct: ' . $this->data['discount_pct'] . '-->';
++//echo '<!-- have discout: ' . $this->data['have_category_discounts'] . '-->';
++            */
+ 
+ 				if ($this->data['cust_discount'] > 0) {
+-				    $price_beforetax = $product_info['price']-($product_info['price']*($this->data['cust_discount']*.01));
+-				} else {
+-			       if ($this->data['have_category_discounts']) {
+-                   $cat_discount_price = $product_info['price']-($product_info['price']*($this->data['discount_pct']*.01));
+-echo '<!-- disc price: ' . $cat_discount_price . '-->';
+-                   $this->data['cat_discount_price'] = $this->currency->format($cat_discount_price);
+-                }	
+-				    $price_beforetax = $product_info['price'];
++				    $price_beforetax = $cat_discount_price; //$product_info['price']-($product_info['price']*($this->data['cust_discount']*.01));
++//				} else {
++//			       if ($this->data['have_category_discounts']) {
++//                   $cat_discount_price = $product_info['price']-($product_info['price']*($this->data['discount_pct']*.01));
++//echo '<!-- disc price: ' . $cat_discount_price . '-->';
++//                   $this->data['cat_discount_price'] = $this->currency->format($cat_discount_price);
++//                }	
++//				    $price_beforetax = $product_info['price'];
+ 				}
+-				$this->data['price'] = ($this->tax->calculate($price_beforetax, $this->data['cust_tax_class'], $this->config->get('config_tax')));
++				//$this->data['price'] = ($this->tax->calculate($price_beforetax, $this->data['cust_tax_class'], $this->config->get('config_tax')));
+ 			
+ 			} else { //not Logged()
+-			    $price_beforetax = $product_info['price'];
++			   $price_beforetax = $product_info['price'];
+ 				$this->data['price'] = ($this->tax->calculate($price_beforetax, $product_info['tax_class_id'], $this->config->get('config_tax')));
+ 			}
++
++         $this->data['price'] = $this->currency->format($product_info['price']); // this is the base price whether from store or default msrp.
+ 			
+-			if ($this->data['price'] > $price_beforetax) {
++			/*if ($this->data['price'] > $price_beforetax) {
+ 			     $price_beforetax_formatted = $this->currency->format($price_beforetax);
+ 			     $this->data['price_beforetax_formatted_string'] = "{$price_beforetax_formatted}+tax";
+-			}
+-			$this->data['price'] = $this->currency->format($this->data['price']);
++         }*/
++			//$this->data['price'] = $this->currency->format($this->data['price']);
+ 
+-			
+-			$special = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $this->request->get['product_id'], false);
+-			
+-			if ($special) {
+-			
+-				if ($this->customer->isLogged() && $this->data['cust_discount'] > 0) {
+-					$this->data['special'] = FALSE;
+-				} else {
+-				    $special_beforetax = $special;
+-					$this->data['special'] = ($this->tax->calculate($special_beforetax, $product_info['tax_class_id'], $this->config->get('config_tax')));
+-				}
+-			
+-            echo '<!-- we have a special price' .$special_beforetax  . '-->';
+-            // KMC Let's determine if we have better customer discount or a better special price.
+-            if ($this->data['have_category_discounts']) {
+-               if ($this->data['cat_discount_price'] <= $this->data['special']) {
+-                  $this->data['special'] = FALSE;  // special is NOT a better deal, so kill it.
+-               }
+-            }
+-			} else {
+-				$this->data['special'] = FALSE;
+-			}
+-
+-			
+-			if ($this->data['special'] > $special_beforetax) {
+-			     $special_beforetax_formatted = $this->currency->format($special_beforetax);
+-			     $this->data['special_beforetax_formatted_string'] = "{$special_beforetax_formatted}+tax";
+-			}
+-
+-			if ($this->data['special']) {
+-			    $this->data['special'] = $this->currency->format($this->data['special']);
+-			}
+-			
+-			
+ 			// end customer group
+-
++		   $this->data['special'] = $special ? $this->currency->format($special) : $special;	
+ 			
+ 			$this->data['stock'] = ($product_info['quantity'] > 0) ? $this->language->get('text_instock') : $product_info['stock'];
+ 			$this->data['ext_product_num'] = $product_info['ext_product_num'];
+@@ -366,7 +357,7 @@
+ 			$options = $this->model_catalog_product->getProductOptions($this->request->get['product_id']);
+ 			
+ 			foreach ($options as $option) { 
+-echo "<!--have discounts-->";
++//echo "<!--have discounts-->";
+ 				$option_value_data = array();
+ 				
+ 
+Index: controller/checkout/cart.php
+===================================================================
+--- controller/checkout/cart.php	(revision 175)
++++ controller/checkout/cart.php	(working copy)
+@@ -5,6 +5,11 @@
+     
+ 	public function index() {
+ 	    
++       // To expand the email cart form.
++       if ($this->request->get['emailcart']) { 
++          $this->data['expand_email_cart'] = $this->request->get['emailcart'];
++       }
++
+ 	    if (!$_SESSION['cartstarter_products_added_to_cart']) {
+ 	        
+ 	        $this->load->model('catalog/product');
+@@ -102,6 +107,7 @@
+ 			}
+       		
+ 			$this->data['action'] = $this->url->http('checkout/cart');
++			$this->data['catalogurl'] = $this->url->http('common/home');
+ 			
+ 			$this->load->model('tool/seo_url'); 
+ 			$this->load->model('catalog/product'); 
+@@ -138,28 +144,25 @@
+ 					$this->data['cust_tax_class'] = $this->customer->getGroupTaxClass();
+ 					$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+ 
++               /* WOW: I shouldn't have to redo all this again, I just did it in the cart above 
+                // KMC  
++               $discount_pct = 0;
+                $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $result['product_id']);
+-echo "<!-- cat_id: " . $category_id . "-->";
+-               $this->data['category_discounts'] = $this->customer->getCategoryDiscounts();
+-               $this->data['category_id'] = $category_id;
+-               $this->data['have_category_discounts'] = false;
+-               $discount_pct = 0;
+-               // Do we actually have any discounts in this category for the customer?
+-               if ($this->data['category_discounts']>0) {
+-                  foreach ($this->data['category_discounts'] as $cat_discount) {
+-                     if (array_key_exists($category_id, $cat_discount)) {
+-                        $this->data['have_category_discounts'] = true; 
+-                        $discount_pct = $cat_discount[$category_id];
+-                        break;
+-                     }       
+-                  }       
+-                  $this->data['discount_pct'] = $discount_pct;
+-               }
+-					
+-               if ($this->data['have_category_discounts']) {
+-//echo "<!-- have discounts -->";
+-//echo "<!-- price: " . $result['price'] . " -->";
++//echo "<!-- cat_id: " . $category_id . "-->";
++               if ($this->customer->hasCategoryDiscount($category_id, $discount_pct))
++               {  
++                  // If our category discount is > then a group discount use it.
++                  if ($discount_pct > $this->data['cust_discount']) {
++                     $this->data['cust_discount'] = $discount_pct;
++                  }  
++                  echo '<!--disc:'.$this->data['cust_discount'].'-->';
++                  // Calculate what should go into the "special" field below.
++                  $cat_discount_price = $result['price']-($result['price']*($this->data['cust_discount']*.01));
++                  echo '<!--cat_disc_price'.$cat_discount_price.'-->';
++                  if ($cat_discount_price < $special || !$special) { $special = $cat_discount_price; }
++               }  
++
++					if ($this->data['cust_discount']>0) {
+ 						$this->data['products'][] = array(
+ 							'key' => $result['key'],
+ 							'name' => $this->language->clean_string($result['name']),
+@@ -168,30 +171,15 @@
+ 							'option' => $option_data,
+ 							'quantity' => $result['quantity'],
+ 							'stock' => $result['stock'],
+-							'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-							'discount' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['discount_pct']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-							'total' => $this->currency->format($this->tax->calculate($result['total']/*-($result['total']*($this->data['discount_pct']*.01))*/, $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-							'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+-						);
+-               } 
+-					else if ($this->data['cust_discount']>0) {
+-						$this->data['products'][] = array(
+-							'key' => $result['key'],
+-							'name' => $this->language->clean_string($result['name']),
+-							'ext_product_num' => $result['ext_product_num'],
+-							'thumb' => $this->model_catalog_product->get_thumbnail_path($result['product_id'], 75, 75),
+-							'option' => $option_data,
+-							'quantity' => $result['quantity'],
+-							'stock' => $result['stock'],
+-							//KMC may need to be this--> 'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+ 							'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+ 							'discount' => NULL,
+ 							'total' => $this->currency->format($this->tax->calculate($result['total']-($result['total']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+ 							'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 						);
++*/
++					//} else {
+ 					
+-					} else {
+-					
++//echo "<!-- have else: " . $result['total'] . "-->";
+ 						$this->data['products'][] = array(
+ 							'key' => $result['key'],
+ 							'name' => $this->language->clean_string($result['name']),
+@@ -201,11 +189,12 @@
+ 							'quantity' => $result['quantity'],
+ 							'stock' => $result['stock'],
+ 							'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-							'discount' => ($result['discount'] ? $this->currency->format($this->tax->calculate($result['price'] - $result['discount'], $this->data['cust_tax_class'], $this->config->get('config_tax'))) : NULL),
++							//'discount' => ($result['discount'] ? $this->currency->format($this->tax->calculate($result['price'] - $result['discount'], $this->data['cust_tax_class'], $this->config->get('config_tax'))) : NULL),
++                     'special' => $result['special'] ? $this->currency->format($result['special']) : $result['special'],
+ 							'total' => $this->currency->format($this->tax->calculate($result['total'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+ 							'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 						);
+-					}
++					//}
+ 				} else {
+ 			      // Not logged in here!	
+ 					$this->data['products'][] = array(
+@@ -217,7 +206,8 @@
+ 						'quantity' => $result['quantity'],
+ 						'stock' => $result['stock'],
+ 						'price' => $this->currency->format($this->tax->calculate($result['price'], $result['tax_class_id'], $this->config->get('config_tax'))),
+-						'discount' => ($result['discount'] ? $this->currency->format($this->tax->calculate($result['price'] - $result['discount'], $result['tax_class_id'], $this->config->get('config_tax'))) : NULL),
++						//'discount' => ($result['discount'] ? $this->currency->format($this->tax->calculate($result['price'] - $result['discount'], $result['tax_class_id'], $this->config->get('config_tax'))) : NULL),
++                  'special' => $result['special'] ? $this->currency->format($result['special']) : $result['special'],
+ 						'total' => $this->currency->format($this->tax->calculate($result['total'], $result['tax_class_id'], $this->config->get('config_tax'))),
+ 						'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 					);
+@@ -260,7 +250,33 @@
+     	}
+     	
+   	}
+-  	
+-  	
++
++   public function emailcart() {
++
++		$this->language->load('checkout/cart');
++
++      //print_r($this->request->post);
++      //echo '<table>'.$this->request->post['message'].'</table>';
++      $to = $this->request->post['email_cart_to'];
++      //echo $to;
++      $subject = 'Emailed Shopping Cart From: ' . $this->language->clean_store_name($this->config->get('config_store')); 
++      //echo $subject;
++      $body = '<html><head><style type="text/css">table{border:1px solid black;} th{background-color:#cccccc;}</style></head><body>';
++      $body .= '<div>Shop our catalog: <a href="'.$this->request->post['catalog'].'">'.$this->language->clean_store_name($this->config->get('config_store')) .'</a></div>';
++      $body .= '<div style="padding-bottom:15px;">Message:<br/>'.$this->request->post['custommessage'].'</div>';
++      $body .= '<table>'.html_entity_decode($this->request->post['message']).'</table></body></html>';
++      //echo $body;
++      $from = $this->request->post['email_from'];
++
++      $mail = new Mail($this->config->get('config_mail_protocol'), $this->config->get('config_smtp_host'), $this->config->get('config_smtp_username'), html_entity_decode($this->config->get('config_smtp_password')), $this->config->get('config_smtp_port'), $this->config->get('config_smtp_timeout')); 
++      $mail->setTo($to);
++      $mail->setFrom($from);
++      $mail->setSender($from);
++      $mail->setSubject($subject);
++      $mail->setHtml($body);
++      $mail->send();
++
++	  	$this->redirect($this->url->https('checkout/cart'));
++   }   
+ }
+ ?>
+Index: controller/checkout/confirm.php
+===================================================================
+--- controller/checkout/confirm.php	(revision 175)
++++ controller/checkout/confirm.php	(working copy)
+@@ -71,12 +71,12 @@
+ 			$this->load->model('total/' . $result['key']);
+ 
+ 			$this->{'model_total_' . $result['key']}->getTotal($total_data, $total, $taxes);
+-/*         echo 'Total_data<br/>';
+-		   print_r($total_data);	
+-         echo 'Total<br/>';
+-         print_r($total);*/
++         //echo 'Total_data<br/>';
++		   //var_dump($total_data);	
++         //echo 'Total<br/>';
++         //var_dump($total);
+ 		}
+-		
++//exit;		
+ 		$sort_order = array(); 
+ 	  
+ 		foreach ($total_data as $key => $value) {
+@@ -162,7 +162,7 @@
+ 			$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+ 
+          // KMC  
+-         $this->data['category_discounts'] = $this->customer->getCategoryDiscounts();
++         /*$this->data['category_discounts'] = $this->customer->getCategoryDiscounts();
+ 		   $this->load->model('catalog/category');
+          $category_id = ''; 
+          $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $product['product_id']);
+@@ -178,8 +178,9 @@
+                 }       
+             }       
+             $this->data['discount_pct'] = $discount_pct;
+-         }       
++         }*/       
+ //         echo 'have disc:' . $this->data['have_category_discounts'] . '<br/>';
++         /*
+          if ($this->data['have_category_discounts']) {
+ 
+ 				$product_data[] = array(
+@@ -194,7 +195,7 @@
+ 					'discount' => $product['price'] - ($product['price'] * ($this->data['discount_pct'] * .01)),
+ 					//'discount' => NULL,
+ 					//'total' => $product['total'] - ($product['total'] * ($this->data['discount_pct'] * .01)),
+-					'total' => $product['total'], /* - ($product['total'] * ($this->data['discount_pct'] * .01)),*/
++					'total' => $product['total'], 
+ 					'tax' => $this->tax->getRate($this->data['cust_tax_class'])
+ 				);
+ 
+@@ -212,9 +213,9 @@
+ 					'total' => $product['total'] - ($product['total'] * ($this->data['cust_discount'] * .01)),
+ 					'tax' => $this->tax->getRate($this->data['cust_tax_class'])
+ 				);
++		   */	
++			//} else {
+ 			
+-			} else {
+-			
+ 				$product_data[] = array(
+ 					'product_id' => $product['product_id'],
+ 					'name' => $product['name'],
+@@ -223,17 +224,15 @@
+ 					'download' => $product['download'],
+ 					'quantity' => $product['quantity'],
+ 					'price' => $product['price'],
+-					'discount' => $product['discount'],
++					'discount' => $product['special'],
+ 					'total' => $product['total'],
+ 					'tax' => $this->tax->getRate($this->data['cust_tax_class'])
+ 				);
+ 			
+-			}
++			//}
+ 			// end customer group
++    	} //foreach
+ 
+-
+-    	}
+-		
+ 		$data['products'] = $product_data;
+ 		$data['totals'] = $total_data;
+ 		$data['comment'] = $this->session->data['comment'];
+@@ -434,6 +433,7 @@
+ 			$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+ 			
+          // KMC  
++         /*
+          $this->data['category_discounts'] = $this->customer->getCategoryDiscounts();
+ 		   $this->load->model('catalog/category');
+          $category_id = ''; 
+@@ -450,10 +450,10 @@
+                 }       
+             }       
+             $this->data['discount_pct'] = $discount_pct;
+-         }       
++         } */      
+ 
+-//         echo 'have disc:' . $this->data['have_category_discounts'] . '<br/>';
+-         if ($this->data['have_category_discounts']) {
++//       echo 'have disc:' . $this->data['have_category_discounts'] . '<br/>';
++         //if ($this->data['have_category_discounts']) {
+ 
+ 				$this->data['products'][] = array(
+ 					'product_id' => $product['product_id'],
+@@ -463,13 +463,11 @@
+ 					'quantity' => $product['quantity'],
+ 					'tax' => $this->tax->getRate($this->data['cust_tax_class']),
+ 					'price' => $this->currency->format($product['price']),
+-				//	'price' => $product['price'] - ($product['price'] * ($this->data['discount_pct'] * .01)),
+-					'discount' => $this->currency->format($product['price'] - ($product['price'] * ($this->data['discount_pct'] * .01))),
+-					//'discount' => NULL,
+-					//'total' => $this->currency->format($product['total'] - ($product['total'] * ($this->data['discount_pct'] * .01))),
++					'discount' => $product['special'] ? $this->currency->format($product['special']) : $special,
+ 					'total' => $this->currency->format($product['total']),
+                'href' => $this->url->http('product/product&product_id=' . $product['product_id'])
+ 				);
++         /*
+          } else if ($this->data['cust_discount']>0) {
+ 			
+ 				$this->data['products'][] = array(
+@@ -501,10 +499,12 @@
+ 				);
+ 			
+ 			}
++          */
+ 			
+ 			// end customer group
+  
+     	} 
++//      var_dump($this->data['products']);exit;
+ 		
+ 		$this->data['totals'] = $total_data;
+ 	
+Index: controller/module/bestseller.php
+===================================================================
+--- controller/module/bestseller.php	(revision 175)
++++ controller/module/bestseller.php	(working copy)
+@@ -6,6 +6,7 @@
+       	$this->data['heading_title'] = $this->language->get('heading_title');
+ 		
+ 		$this->load->model('catalog/product');
++		$this->load->model('catalog/category');
+ 		$this->load->model('catalog/review');
+ 		$this->load->model('tool/seo_url');
+ 		$this->load->helper('image');
+@@ -26,7 +27,7 @@
+ 			$special = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $result['product_id'], false);
+ 			
+ 			if ($special) {
+-				$special = $this->currency->format($this->tax->calculate($special, $result['tax_class_id'], $this->config->get('config_tax')));
++				$special = $special; //$this->currency->format($this->tax->calculate($special, $result['tax_class_id'], $this->config->get('config_tax')));
+ 			} else {
+ 				$special = FALSE;
+ 			}
+@@ -39,10 +40,27 @@
+ 				$this->data['cust_tax_class'] = $this->customer->getGroupTaxClass();
+ 				$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+ 				
++            $discount_pct = 0;
++            $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $result['product_id']); 
++            if ($this->customer->hasCategoryDiscount($category_id, $discount_pct))
++            {
++               // If our category discount is > then a group discount use it.
++               if ($discount_pct > $this->data['cust_discount']) {
++                  $this->data['cust_discount'] = $discount_pct;
++               }
++               echo '<!--disc:'.$this->data['cust_discount'].'-->';
++               // Calculate what should go into the "special" field below.
++               $cat_discount_price = $result['price']-($result['price']*($this->data['cust_discount']*.01));
++               echo '<!--cat_disc_price'.$cat_discount_price.'-->';
++               if ($cat_discount_price < $special || !$special) { $special = $cat_discount_price; }
++            }
++
+ 				$this->data['products'][] = array(
+ 					'name' => $this->language->clean_string($result['name']),
+-					'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-					'special' => $special,
++               // Don't calculate the discount in the display price, we want to show full price, then cross it out.
++					//'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
++					'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
++					'special' => $special ? $this->currency->format($special) : $special,
+ 					'image' => HelperImage::resize($image, 38, 38),
+ 					'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 				);
+@@ -60,7 +78,6 @@
+ 			}
+ 			
+ 			// end customer group
+-
+ 		}
+ 		
+ 		$this->id       = 'bestseller';
+Index: controller/common/home.php
+===================================================================
+--- controller/common/home.php	(revision 175)
++++ controller/common/home.php	(working copy)
+@@ -26,6 +26,7 @@
+       $this->data['special'] = $this->url->http('product/special');		
+ 
+ 		$this->load->model('catalog/product');
++		$this->load->model('catalog/category');
+ 		$this->load->model('catalog/review');
+ 		$this->load->model('tool/seo_url');
+ 		$this->load->helper('image');
+@@ -45,7 +46,7 @@
+ 			$special = $this->model_catalog_product->getProductSpecial($_SESSION['store_code'], $result['product_id'], false);
+ 			
+ 			if ($special) {
+-				$special = $this->currency->format($this->tax->calculate($special, $result['tax_class_id'], $this->config->get('config_tax')));
++				$special = $special; //$this->currency->format($this->tax->calculate($special, $result['tax_class_id'], $this->config->get('config_tax')));
+ 			} else {
+ 				$special = FALSE;
+ 			}
+@@ -57,18 +58,35 @@
+ 				$this->data['cust_group_id'] = $this->customer->getGroupID();
+ 				$this->data['cust_tax_class'] = $this->customer->getGroupTaxClass();
+ 				$this->data['cust_discount'] = $this->customer->getGroupDiscount();
+-				
++
++            $discount_pct = 0; 
++            $category_id = $this->model_catalog_category->getCategoryForProductID($_SESSION['store_code'], $result['product_id']); 
++            if ($this->customer->hasCategoryDiscount($category_id, $discount_pct))
++            {  
++               // If our category discount is > then a group discount use it.
++               if ($discount_pct > $this->data['cust_discount']) {
++                  $this->data['cust_discount'] = $discount_pct;
++               }  
++               //echo '<!--disc:'.$this->data['cust_discount'].'-->';
++               // Calculate what should go into the "special" field below.
++               $cat_discount_price = $result['price']-($result['price']*($this->data['cust_discount']*.01));
++               echo '<!--special:'.$special.'cat_disc_price'.$cat_discount_price.'-->';
++               if ($cat_discount_price < $special || !$special) { $special = $cat_discount_price; }
++            }  
++
+ 				if ($this->data['cust_discount']>0) {
+ 				
+ 					$this->data['products'][] = array(
+ 						'name' => $this->language->clean_string($result['name']),
+-					    'gradelevels_display' => $result['gradelevels_display'],
++  				      'gradelevels_display' => $result['gradelevels_display'],
+ 						'ext_product_num' => $result['ext_product_num'],
+ 						'rating' => $rating,
+ 						'stars' => sprintf($this->language->get('text_stars'), $rating),
+ 						'thumb' => $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+-						'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-						'special' => NULL,
++                  // show full price, then cross it out using the "special" price below.
++						//'price' => $this->currency->format($this->tax->calculate($result['price']-($result['price']*($this->data['cust_discount']*.01)), $this->data['cust_tax_class'], $this->config->get('config_tax'))),
++						'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
++						'special' => $special ? $this->currency->format($special) : $special,
+ 						'product_id' => $result['product_id'],
+ 						'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 					);
+@@ -83,7 +101,7 @@
+ 						'stars' => sprintf($this->language->get('text_stars'), $rating),
+ 						'thumb' => $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+ 						'price' => $this->currency->format($this->tax->calculate($result['price'], $this->data['cust_tax_class'], $this->config->get('config_tax'))),
+-						'special' => $special,
++						'special' => $special ? $this->currency->format($special) : $special,
+ 						'product_id' => $result['product_id'],
+ 						'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 					);
+@@ -100,7 +118,7 @@
+ 					'stars' => sprintf($this->language->get('text_stars'), $rating),
+ 					'thumb' => $this->model_catalog_product->get_thumbnail_path($result['product_id']),
+ 					'price' => $this->currency->format($this->tax->calculate($result['price'], $result['tax_class_id'], $this->config->get('config_tax'))),
+-					'special' => $special,
++					'special' => $special ? $this->currency->format($special) : $special,
+ 					'product_id' => $result['product_id'],
+ 					'href' => $this->model_tool_seo_url->rewrite($this->url->http('product/product&product_id=' . $result['product_id']))
+ 				);
+Index: controller/account/create.php
+===================================================================
+--- controller/account/create.php	(revision 175)
++++ controller/account/create.php	(working copy)
+@@ -74,6 +74,9 @@
+     	$this->data['text_your_address'] = $this->language->get('text_your_address');
+     	$this->data['text_your_password'] = $this->language->get('text_your_password');
+ 		$this->data['text_newsletter'] = $this->language->get('text_newsletter');
++		$this->data['text_taxexempt'] = $this->language->get('text_taxexempt');
++		$this->data['text_tax_note'] = $this->language->get('text_tax_note');
++		$this->data['text_school_info'] = $this->language->get('text_school_info');
+ 				
+     	$this->data['entry_firstname'] = $this->language->get('entry_firstname');
+     	$this->data['entry_lastname'] = $this->language->get('entry_lastname');
+@@ -91,6 +94,9 @@
+     	$this->data['entry_password'] = $this->language->get('entry_password');
+     	$this->data['entry_confirm'] = $this->language->get('entry_confirm');
+ 
++		$this->data['entry_schoolname'] = $this->language->get('entry_schoolname');
++		$this->data['entry_taxid'] = $this->language->get('entry_taxid');
++
+ 		$this->data['button_continue'] = $this->language->get('button_continue');
+     
+ 		$this->data['error_warning'] = @$this->error['warning'];
+Index: controller/account/address.php
+===================================================================
+--- controller/account/address.php	(revision 175)
++++ controller/account/address.php	(working copy)
+@@ -420,4 +420,4 @@
+ 		$this->response->setOutput($output);
+   	}  
+ }
+-?>
+\ No newline at end of file
++?>
+Index: controller/account/edit.php
+===================================================================
+--- controller/account/edit.php	(revision 175)
++++ controller/account/edit.php	(working copy)
+@@ -46,12 +46,17 @@
+ 		$this->data['heading_title'] = $this->language->get('heading_title');
+ 
+ 		$this->data['text_your_details'] = $this->language->get('text_your_details');
++		$this->data['text_taxexempt'] = $this->language->get('text_taxexempt');
++		$this->data['text_school_info'] = $this->language->get('text_school_info');
++		$this->data['text_tax_note'] = $this->language->get('text_tax_note');
+ 
+ 		$this->data['entry_firstname'] = $this->language->get('entry_firstname');
+ 		$this->data['entry_lastname'] = $this->language->get('entry_lastname');
+ 		$this->data['entry_email'] = $this->language->get('entry_email');
+ 		$this->data['entry_telephone'] = $this->language->get('entry_telephone');
+ 		$this->data['entry_fax'] = $this->language->get('entry_fax');
++		$this->data['entry_schoolname'] = $this->language->get('entry_schoolname');
++		$this->data['entry_taxid'] = $this->language->get('entry_taxid');
+ 
+ 		$this->data['button_continue'] = $this->language->get('button_continue');
+ 		$this->data['button_back'] = $this->language->get('button_back');
+@@ -98,6 +103,18 @@
+ 			$this->data['fax'] = @$customer_info['fax'];
+ 		}
+ 
++		if (isset($this->request->post['taxid'])) {
++			$this->data['taxid'] = $this->request->post['taxid'];
++		} else {
++			$this->data['taxid'] = @$customer_info['tax_id'];
++		}
++
++		if (isset($this->request->post['schoolname'])) {
++			$this->data['schoolname'] = $this->request->post['schoolname'];
++		} else {
++			$this->data['schoolname'] = @$customer_info['schoolname'];
++		}
++
+ 		$this->data['back'] = $this->url->https('account/account');
+ 		
+ 		$this->id       = 'content';
+@@ -135,4 +152,4 @@
+ 		}
+ 	}
+ }
+-?>
+\ No newline at end of file
++?>
+Index: language/english/account/create.php
+===================================================================
+--- language/english/account/create.php	(revision 83)
++++ language/english/account/create.php	(working copy)
+@@ -11,6 +11,9 @@
+ $_['text_newsletter']      = 'Newsletter';
+ $_['text_your_password']   = 'Your Password';
+ $_['text_agree']           = 'I have read and agree to the <a onclick="window.open(\'%s\');"><b>%s</b></a>';
++$_['text_school_info']      = 'School Information';
++$_['text_taxexempt']       = 'Tax Exempt Information (optional)';
++$_['text_tax_note']        = '* Providing a Tax ID Number will not make you tax-exempt automatically. Please allow for verification of your exempt status. Any purchases made before this status is confirmed are subject to sales tax.';
+ 
+ // Entry
+ $_['entry_firstname']      = 'First Name:';
+@@ -28,6 +31,8 @@
+ $_['entry_newsletter']     = 'Subscribe:';
+ $_['entry_password']       = 'Password:';
+ $_['entry_confirm']        = 'Password Confirm:';
++$_['entry_schoolname']     = 'School Name:';
++$_['entry_taxid']          = 'Tax Exempt ID Number:';
+ 
+ // Mail
+ $_['mail_subject']         = '%s - Thank you for registering';
+@@ -48,4 +53,4 @@
+ $_['error_city']           = 'City must be greater than 3 and less than 128 characters!';
+ $_['error_telephone']      = 'Telephone must be greater than 3 and less than 32 characters!';
+ $_['error_agree']          = 'Error: You must agree to the %s!';
+-?>
+\ No newline at end of file
++?>
+Index: language/english/account/edit.php
+===================================================================
+--- language/english/account/edit.php	(revision 83)
++++ language/english/account/edit.php	(working copy)
+@@ -7,7 +7,11 @@
+ $_['text_edit']           = 'Edit Information';
+ $_['text_your_details']   = 'Your Personal Details';
+ $_['text_success']        = 'Success: Your account has been successfully updated.';
++$_['text_taxexempt']      = 'Tax Exempt Information (optional)';
++$_['text_school_info']    = 'School Information';
++$_['text_tax_note']       = '* Providing a Tax ID Number will not make you tax-exempt automatically. Please allow for verification of your exempt status. Any purchases made before this status is confirmed are subject to sales tax.';
+ 
++
+ // Entry
+ $_['entry_firstname']     = 'First Name:';
+ $_['entry_lastname']      = 'Last Name:';
+@@ -15,6 +19,8 @@
+ $_['entry_email']         = 'E-Mail:';
+ $_['entry_telephone']     = 'Telephone:';
+ $_['entry_fax']           = 'Fax:';
++$_['entry_schoolname']     = 'School Name:';
++$_['entry_taxid']          = 'Tax Exempt ID Number:';
+ 
+ // Error
+ $_['error_exists']        = 'Error: E-Mail address is already registered!';
+Index: view/theme/default/stylesheet/stylesheet.php
+===================================================================
+--- view/theme/default/stylesheet/stylesheet.php	(revision 94)
++++ view/theme/default/stylesheet/stylesheet.php	(working copy)
+@@ -5,11 +5,11 @@
+         // LOCAL DEV
+         require_once('C:/_work/_projects/prms-frontoffice/config.php');
+         
+-    } elseif (strstr($_SERVER['SERVER_NAME'], 'xod.ca')) {
++    } elseif (strstr($_SERVER['SERVER_NAME'], 'capnet.cc')) {
++                         
++      // DEV
++      require_once('/var/www/vhosts/catsolonline.com/prms-frontoffice/trunk/config.php');
+         
+-        // DEV
+-        require_once('/home/content/g/c/h/gchuah/html/prms-frontoffice/trunk/config.php');
+-        
+     } else {
+         
+         // PRODUCTION
+Index: view/theme/default/stylesheet/PIG_stylesheet.php
+===================================================================
+--- view/theme/default/stylesheet/PIG_stylesheet.php	(revision 101)
++++ view/theme/default/stylesheet/PIG_stylesheet.php	(working copy)
+@@ -1,5 +1,4 @@
+ <?php
+-
+     if (strstr($_SERVER['SERVER_NAME'], 'prms-local-')) {
+     	 
+         // LOCAL DEV
+@@ -23,17 +22,6 @@
+     }
+ 	
+ 	
+-	require_once(DIR_SYSTEM . 'startup.php');
+-	
+-	$db = new DB(DB_DRIVER, DB_HOSTNAME, DB_USERNAME, DB_PASSWORD, DB_DATABASE);
+-	$store_row = $db->get_record('store', "storefront_url  LIKE '%{$_SERVER['SERVER_NAME']}%'");
+-	
+-	if (!$store_row) {
+-		exit;
+-	} else {
+-		$store_code = $store_row['code'];
+-	}
+-	
+ 	header("Content-Type: text/css");
+ ?>
+ 
+@@ -119,7 +107,7 @@
+ 	padding-left: 10px;
+ 	padding-right: 10px;
+ 	height: 40px;
+-	background: url('<?php echo HTTPS_IMAGE .'stores/'.$store_code ?>/nav_background.png') repeat-x;
++	background-color: #cc7c7c;
+ }
+ #header .div4 img {
+ 	float: left;
+@@ -462,6 +450,9 @@
+ 	float: right;
+ 	text-align: right;
+ }
++#mfg {
++   width:180px;
++}
+ #category ul {
+ 	margin-top: 0px;
+ 	margin-bottom: 0px;
+Index: view/theme/default/template/product/category.tpl
+===================================================================
+--- view/theme/default/template/product/category.tpl	(revision 175)
++++ view/theme/default/template/product/category.tpl	(working copy)
+@@ -1,3 +1,4 @@
++
+ <div class="top">
+   <h1><?php echo $heading_title; ?></h1>
+ </div>
+Index: view/theme/default/template/checkout/cart.tpl
+===================================================================
+--- view/theme/default/template/checkout/cart.tpl	(revision 175)
++++ view/theme/default/template/checkout/cart.tpl	(working copy)
+@@ -4,7 +4,7 @@
+     //print_r($products);
+ ?>
+ <div class="top">
+-  <h1 style="padding-right:15px;"><?php echo $heading_title; ?><a style="position:relative;float:right;" onclick='$("#email_addresses").toggle()'>Email Cart</a></h1>
++  <h1 style="padding-right:15px;"><?php echo $heading_title; ?><a style="position:relative;float:right;" onclick='$("#email_addresses").toggle("slow")'>Email Cart</a></h1>
+ </div>
+ <div class="middle">
+   <?php if ($error) { ?>
+@@ -12,19 +12,22 @@
+   <?php } ?>
+   <div class="buttons" id="email_addresses">
+     <div id="loading" style="font-weight:bold;padding-left:0px;"></div>
+-    <i>Email this cart to:</i><br/>
++    <i>Email this cart to (email address):</i><br/>
+     <form action="index.php?route=checkout/cart/emailcart" method="post" enctype="multipart/form-data" id="emailcartform">
+     <input type="text" name="email_cart_to" value="" size="25"/><br/>
++    <i>From (email address):</i><br/>
++    <input type="text" name="email_from" value="" size="25"/><br/>
+     <i>Custom Message:</i><br/>
+     <textarea name="custommessage" rows="4" cols="60"></textarea>
+     <input type="hidden" name="message"/>
++    <input type="hidden" name="catalog" value="<?php echo $catalogurl; ?>"/>
+     <a onclick="submitemailcart();" id="email_cart_button" class="button-red" style="float:right;"><span>Email Cart</span></a>
+     </form>
+   </div>
+   <form action="<?php echo $action; ?>" method="post" enctype="multipart/form-data" id="cart">
+     <table class="cart" id="cart_table">
+       <tr>
+-        <th align="center"><?php echo $column_remove; ?></th>
++        <th align="center" id="remove_header"><?php echo $column_remove; ?></th>
+         <th align="center"><?php echo $column_image; ?></th>
+         <th align="left"><?php echo $column_name; ?></th>
+         <th align="left">Item #</th>
+@@ -36,7 +39,7 @@
+       <?php foreach ($products as $product) { ?>
+       <?php $class = ($class == 'even' ? 'odd' : 'even'); ?>
+       <tr class="<?php echo $class; ?>">
+-        <td align="center"><input type="checkbox" name="remove[<?php echo $product['key']; ?>]" /></td>
++        <td align="center" ><input type="checkbox" name="remove[<?php echo $product['key']; ?>]" /></td>
+         <td align="center" style="width:85px;"><a href="<?php echo $product['href']; ?>" border="0"><img border="0" src="<?php echo $product['thumb']; ?>" alt="<?php echo $product['name']; ?>" /></a></td>
+         <td align="left" valign="top">
+         	<?php if ( strpos($product['key'], '*^nonstandard^*')!==false && strpos($product['key'], '*^nonstandard^*')==0 ): ?>
+@@ -55,11 +58,11 @@
+         </td>
+         <td align="left" valign="top"><?php echo $product['ext_product_num']; ?></td>
+         <td align="right" valign="top"><input type="text" name="quantity[<?php echo $product['key']; ?>]" value="<?php echo $product['quantity']; ?>" size="3" /></td>
+-        <td align="right" valign="top"><?php if (!$product['discount']) { ?>
++        <td align="right" valign="top"><?php if (!$product['special']) { ?>
+           <?php echo $product['price']; ?>
+           <?php } else { ?>
+           <u style="color: #F00; text-decoration: line-through;"><?php echo $product['price']; ?></u><br />
+-          <?php echo $product['discount']; ?>
++          <?php echo $product['special']; ?>
+           <?php } ?>
+           
+         </td>
+@@ -86,9 +89,9 @@
+ $(document).ready(function() {
+    expcart = '<?php echo $expand_email_cart;?>';
+    if (expcart == 'yes') {
+-      $("#email_addresses").show();
++      $("#email_addresses").show("slow");
+    } else {
+-      $("#email_addresses").hide();
++      $("#email_addresses").hide("fast");
+    } 
+ 
+    $("#email_cart_button").ajaxStart(function() { 
+@@ -97,6 +100,7 @@
+ 
+    $("#email_cart_button").ajaxComplete(function() { 
+       $("#loading").text("Sent!");      
++      $("#email_addresses").hide("slow");
+    });
+ 
+    $("#email_cart_button").click(function()
+@@ -112,11 +116,18 @@
+    });
+ });
+ 
+-/*function submitemailcart() {
++function submitemailcart() {
++ 
++   // validate first.
++   if ($("input[name='email_cart_to']").val().length == 0) { 
++      alert('Who are you sending the cart to? Give email address'); return 0; 
++   }
++   // Clean out checkboxes.
++   $("input[type='checkbox']").remove();
++   $("#remove_header").text("Item");
+    $("input[name='message']").val($("#cart_table").html());
+    $("#emailcartform").submit();
+ }
+-*/
+ //--></script>
+ <?php 
+ 
+Index: view/theme/default/template/checkout/confirm.tpl
+===================================================================
+--- view/theme/default/template/checkout/confirm.tpl	(revision 175)
++++ view/theme/default/template/checkout/confirm.tpl	(working copy)
+@@ -80,6 +80,9 @@
+           <td align="right"><?php echo $total['text']; ?></td>
+         </tr>
+         <?php } ?>
++        <?php if ($tax_exempt) { ?>
++        <tr><td colspan="2" align="left"><strong>NOTE:</strong> Tax Exempt Customer</td></tr>
++        <?php } ?>
+       </table>
+       <br />
+     </div>
+Index: view/theme/default/template/account/create.tpl
+===================================================================
+--- view/theme/default/template/account/create.tpl	(revision 175)
++++ view/theme/default/template/account/create.tpl	(working copy)
+@@ -130,6 +130,31 @@
+         </tr>
+       </table>
+     </div>
++
++    <b style="margin-bottom: 3px; display: block;"><?php echo $text_school_info; ?></b>
++    <div style="background: #F7F7F7; border: 1px solid #DDDDDD; padding: 10px; margin-bottom: 10px;">
++      <table width="100%">
++        <tr>
++          <td><?php echo $entry_schoolname; ?></td>
++          <td><input type="text" name="schoolname" value="<?php echo $schoolname; ?>" />
++        </tr>
++      </table>
++    </div>
++
++    <b style="margin-bottom: 3px; display: block;"><?php echo $text_taxexempt; ?></b>
++    <div style="background: #F7F7F7; border: 1px solid #DDDDDD; padding: 10px; margin-bottom: 10px;">
++      <table width="100%">
++        <tr>
++          <td width="150"><span>*</span> <?php echo $entry_taxid; ?></td>
++          <td><input type="text" name="taxid" value="<?php echo $taxid; ?>" />
++        </tr>
++        <tr>
++          <td width="150" colspan="2">
++             <?php echo $text_tax_note; ?>
++          </td>
++        </tr>
++      </table>
++    </div>
+     <?php if ($text_agree) { ?>
+     <div class="buttons">
+       <table>
+Index: view/theme/default/template/account/edit.tpl
+===================================================================
+--- view/theme/default/template/account/edit.tpl	(revision 175)
++++ view/theme/default/template/account/edit.tpl	(working copy)
+@@ -43,6 +43,27 @@
+         </tr>
+       </table>
+     </div>
++    <b style="margin-bottom: 3px; display: block;"><?php echo $text_school_info; ?></b>
++    <div style="background: #F7F7F7; border: 1px solid #DDDDDD; padding: 10px; margin-bottom: 10px;">
++     <table width="100%">
++     <tr>
++       <td width="150"><?php echo $entry_schoolname; ?></td>
++       <td><input type="text" name="schoolname" value="<?php echo $schoolname; ?>"/></td>
++     </tr>
++     </table>
++    </div>
++    <b style="margin-bottom: 3px; display: block;"><?php echo $text_taxexempt; ?></b>
++    <div style="background: #F7F7F7; border: 1px solid #DDDDDD; padding: 10px; margin-bottom: 10px;">
++     <table width="100%">
++     <tr>
++       <td width="150"><?php echo $entry_taxid; ?></td>
++       <td><input type="text" name="taxid" value="<?php echo $taxid; ?>"/></td>
++     </tr>
++     <tr>
++       <td colspan="2"><?php echo $text_tax_note; ?></td>
++     </tr>
++     </table>
++    </div>
+     <div class="buttons">
+       <table>
+         <tr>
+Index: view/theme/default/template/payment/cccapture.tpl
+===================================================================
+--- view/theme/default/template/payment/cccapture.tpl	(revision 175)
++++ view/theme/default/template/payment/cccapture.tpl	(working copy)
+@@ -82,6 +82,7 @@
+ 			if (data.error) {
+ 				alert(data.error);
+ 				
++			   $('.wait').remove();
+ 				$('#paypal_button').attr('disabled', '');
+ 			}
+ 			
+Index: view/includes/product_list_common.php
+===================================================================
+--- view/includes/product_list_common.php	(revision 118)
++++ view/includes/product_list_common.php	(working copy)
+@@ -30,17 +30,11 @@
+            <a href="<?php echo $products[$j]['href']?>" style="color:red;">More info...</a>
+         <?php } else { ?>        
+         <?php if (!$products[$j]['special']) { ?>
+-        <?php   if (!$products[$j]['cat_discount_price']) { ?>
+         	  <span style="color: #900; font-weight: bold;"><?php echo $products[$j]['price']; ?></span><br />
+-        <?php   } else { ?>
+-        	  <span style="color: #900; font-weight: bold; text-decoration: line-through;"><?php echo $products[$j]['price']; ?></span> <span style="color: #F00;"><?php echo $products[$j]['cat_discount_price']; ?></span>
+-        <?php   } ?>
+-
+         <?php } else { ?>
+         	<span style="color: #900; font-weight: bold; text-decoration: line-through;"><?php echo $products[$j]['price']; ?></span> <span style="color: #F00;"><?php echo $products[$j]['special']; ?></span>
+         <?php } ?>
+-        <?php } /*pvg_id*/ ?>
+-
++        <?php }  /*pvg_id*/ ?>
+         <?php if ($products[$j]['rating']) { ?>
+         	<img src="catalog/view/theme/default/image/stars_<?php echo $products[$j]['rating'] . '.png'; ?>" alt="<?php echo $products[$j]['stars']; ?>" />
+         <?php } ?>
+@@ -58,6 +52,3 @@
+     </tr>
+     <?php } ?>
+   </table>
+-<?php //print_r($category_id); ?>
+-<?php //print_r($category_discounts); ?>
+-<?php //print_r($discount_pct); ?>

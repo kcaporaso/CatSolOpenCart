@@ -1,0 +1,11 @@
+New Category/Importer Code
+--This line, and those below, will be ignored--
+
+M    catalog/category.php
+M    catalog/product.php
+M    catalog/productvariantgroup.php
+M    productset/product.php
+M    store/product.php
+M    tool/export.php
+M    user/productset.php
+M    user/store.php

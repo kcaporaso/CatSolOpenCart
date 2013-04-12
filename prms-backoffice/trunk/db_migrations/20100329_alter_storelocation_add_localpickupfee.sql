@@ -1,0 +1,1 @@
+ALTER TABLE `prmsdb`.`storelocation` ADD COLUMN `localpickup_fee` DECIMAL(5,2) UNSIGNED DEFAULT 0 AFTER `postalcode`;

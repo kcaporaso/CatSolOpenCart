@@ -1,0 +1,861 @@
+Index: config.php
+===================================================================
+--- config.php	(revision 74)
++++ config.php	(working copy)
+@@ -43,6 +43,7 @@
+ 
+     define('HTTP_SERVER', 'http://admin.capnet.cc/');
+     define('HTTP_IMAGE', 'http://images.capnet.cc/');
++    //define('HTTPS_SERVER', 'https://admin.capnet.cc/');
+     define('HTTPS_SERVER', '');
+     define('HTTPS_IMAGE', '');    
+     
+Index: controller/catalog/globalspecial.php
+===================================================================
+--- controller/catalog/globalspecial.php	(revision 83)
++++ controller/catalog/globalspecial.php	(working copy)
+@@ -328,7 +328,7 @@
+       		'separator' => ' :: '
+    		);
+ 
+-   		
++
+ 		if (!isset($this->request->get['id'])) {
+ 			$this->data['action'] = $this->url->https('catalog/globalspecial/insert' . $url);
+ 		} else {
+@@ -347,6 +347,12 @@
+       		$record_data = $this->model_catalog_globalspecial->getGlobalspecial($_SESSION['store_code'], $this->request->get['id']);
+     	}
+ 
++      // Load in categories here.
++      /*
++      $categories = $this->model_catalog_category->getCategories (0, $_SESSION['store_code'], null);
++      $this->data['categories'] = $categories;
++      */
++
+ 		if (isset($this->request->post['discount'])) {
+ 			$this->data['discount'] = $this->request->post['discount'];
+ 		} else {
+Index: controller/tool/export.php
+===================================================================
+--- controller/tool/export.php	(revision 83)
++++ controller/tool/export.php	(working copy)
+@@ -36,19 +36,35 @@
+ 	            
+ 	        }
+ 	        
+-	    }
++	   }
+ 	    
+-	    if (!$_SESSION['products_importer']['import_type']) {
++	   if (!$_SESSION['products_importer']['import_type']) {
+ 	        $_SESSION['products_importer']['import_type']['import_type_products_A_checked'] = 'checked';
+ 	        $_SESSION['products_importer']['import_type']['selected'] = 'products_A';
+-	    }
+-	    
++	   }
++
++      // KMC Checking for core dataset or not.
++      if ($core_dataset = $this->request->post['core_dataset'])
++      {
++         unset($_SESSION['core_dataset']);
++         if ($core_dataset == 'Yes') {
++            $core_dataset = true;
++            $_SESSION['core_dataset']['Yes'] = 'checked';
++            $_SESSION['core_dataset']['No'] = '';
++         } else {
++            $core_dataset = false;
++            $_SESSION['core_dataset']['No'] = 'checked';
++            $_SESSION['core_dataset']['Yes'] = '';
++         }
++      }
++//echo 'core_dataset:' . $_SESSION['core_dataset'];	    
++//exit;
+ 		$this->load->language('tool/export');
+ 		$this->document->title = $this->language->get('heading_title');
+ 		$this->load->model('tool/export');
+ 		
+-        $this->load->model('store/product');
+-        $this->model_store_product->createUnjunctionedProductRecords($_SESSION['store_code']);		
++      $this->load->model('store/product');
++      $this->model_store_product->createUnjunctionedProductRecords($_SESSION['store_code']);		
+ 
+ //KMC adding limit stuff.
+       set_time_limit(0);
+@@ -58,11 +74,14 @@
+ 
+ 		if (($this->request->server['REQUEST_METHOD'] == 'POST') && ($this->validate())) {
+ 		    
+-			if ((isset( $this->request->files['upload'] )) && (is_uploaded_file($this->request->files['upload']['tmp_name']))) {
++        if ((isset( $this->request->files['upload'] )) && (is_uploaded_file($this->request->files['upload']['tmp_name']))) {
+ 			    
++            // KMC for the export.tpl, to help track uploading.
++            $_SESSION['uploaded_filename'] = $this->request->files['upload']['name'];
++
+ 				$file = $this->request->files['upload']['tmp_name'];
+ 				
+-				$import_result = $this->model_tool_export->upload($file);
++				$import_result = $this->model_tool_export->upload($file, $core_dataset);
+ 				if (!$import_result) {
+ 				    $this->error['warning'] = $this->language->get('error_upload');
+ 				} elseif (!empty($import_result['errors'])) {
+Index: model/catalog/category.php
+===================================================================
+--- model/catalog/category.php	(revision 106)
++++ model/catalog/category.php	(working copy)
+@@ -264,49 +264,56 @@
+ 	}	
+ 	
+ 	
+-	public function get_id_from_phrasekey ($store_code, $phrasekey) {
++	public function get_id_from_phrasekey ($store_code, $phrasekey, $productset_id) {
+ 	    
+ 	    $phrasekey_escaped = mysql_real_escape_string($phrasekey);
+ 	    
+ 	    $sql = "
+ 	    	SELECT	category_id
+ 	    	FROM	category
+-	    	WHERE	store_code = '{$store_code}' AND phrasekey = '{$phrasekey_escaped}'
++	    	WHERE	store_code = '{$store_code}' AND phrasekey = '{$phrasekey_escaped}' AND productset_id = '{$productset_id}'
+ 	    ";
+ 	    
+ 	    $result = $this->db->query($sql);
+ 	    
+ 	    return $result->row['category_id'];
+-	    
+ 	}
+ 
+ 	
+-	public function add_category_record_if_not_exists ($store_code, $phrasekey, $stop=false, $productset_codes=array()) {
++	public function add_category_record_if_not_exists ($store_code, $phrasekey, $stop=false, $productset_id) {
+ 	    
+ 	    if ($phrasekey == '') return;
+         
+ 	    $phrasekey_escaped = mysql_real_escape_string($phrasekey);
+ 	    
+-		$exists = $this->db->get_record('category', " store_code = '{$store_code}' AND phrasekey = '{$phrasekey_escaped}' ");
++		$exists = $this->db->get_record('category', " store_code = '{$store_code}' AND phrasekey = '{$phrasekey_escaped}' AND productset_id = '{$productset_id}' ");
+ 		
+ 		if ($exists) {
+ 			//do nothing
++//echo " Category exists-->" . $phrasekey . "<--- bailing out...";
++//exit;
+ 		} else {	
++//echo " Adding NEW category record--> STORE_CODE:" . $store_code . ", PRODUCTSET_ID:" . $productset_id . ", PHRASEKEY:" . $phrasekey . " <---- ";
++//exit;
+           // When adding new categories.		    
+ 		    $add_data['store_code'] = $store_code;
+ 		    $add_data['phrasekey'] = $phrasekey;
+ 		    $add_data['date_added'] = date(ISO_DATETIME_FORMAT);
+ 		    $add_data['date_modified'] = date(ISO_DATETIME_FORMAT);
++          
++          // KMC : 06/24/2010 : Putting this right into the category table now.
++          $add_data['productset_id'] = $productset_id;
+ 
+ 		    $this->db->add('category', $add_data);
+ 		    $last_insert_id = $this->db->getLastId();
+ 		    
+ 		    $category_description_data['category_id'] = $last_insert_id;
+ 		    $category_description_data['language_id'] = 1;
+-		    $category_description_data['name'] = $this->get_last_phrasekey_node($phrasekey);    
++		    $category_description_data['name'] = $this->get_last_phrasekey_node($phrasekey); 
+ 		    $this->db->add('category_description', $category_description_data);		   
+ 
+           // KMC adding to category_to_producset table (tracks which productset owns the category).
++          /* This was an old attempt so I built this directly into the category table now.
+           foreach ((array)$productset_codes as $productset_code) {
+              if (!empty($productset_code)) {
+                 $productset_id = $this->model_user_productset->getProductsetIDFromCode($productset_code);
+@@ -316,7 +323,7 @@
+                 $cat_to_productset_data['store_code'] = $store_code;
+                 $this->db->add('category_to_productset', $cat_to_productset_data);
+              }
+-          }
++          }*/
+ 		}
+ 		    	    
+ 	    if (!$stop) {
+@@ -327,27 +334,27 @@
+ 	            $stop = true;
+ 	        }
+ 	        
+-	        $this->add_category_record_if_not_exists($store_code, $parent_phrasekey, $stop, $productset_codes);
++	        $this->add_category_record_if_not_exists($store_code, $parent_phrasekey, $stop, $productset_id);
+ 	    }
+ 	}	
+ 	
+ 	
+-	public function assign_category_record_parent ($store_code, $phrasekey, $stop=false) {
++	public function assign_category_record_parent ($store_code, $phrasekey, $stop=false, $productset_id) {
+ 	        
+         $parent_phrasekey = $this->get_phrasekey_parent_string($phrasekey);
+ 
+         if ($parent_phrasekey == '') {
+             $parent_id = '0';
+         } else {
+-            $parent_id = $this->get_id_from_phrasekey($store_code, $parent_phrasekey);
++            $parent_id = $this->get_id_from_phrasekey($store_code, $parent_phrasekey, $productset_id);
+         }            
+         
+-        $record_id = $this->get_id_from_phrasekey($store_code, $phrasekey);
++        $record_id = $this->get_id_from_phrasekey($store_code, $phrasekey, $productset_id);
+         
+         $phrasekey_escaped = mysql_real_escape_string($phrasekey);
+         
+         $update_data['parent_id'] = $parent_id;
+-        $this->db->update('category', $update_data, "store_code = '{$store_code}' AND phrasekey = '{$phrasekey_escaped}' ");
++        $this->db->update('category', $update_data, "store_code = '{$store_code}' AND phrasekey = '{$phrasekey_escaped}' AND productset_id = '{$productset_id}' ");
+         
+         if (!$stop) {
+             
+@@ -355,7 +362,7 @@
+                 $stop = true;
+             }
+             
+-            $this->assign_category_record_parent($store_code, $parent_phrasekey, $stop);
++            $this->assign_category_record_parent($store_code, $parent_phrasekey, $stop, $productset_id);
+ 	    }
+ 	}
+ 	
+@@ -505,7 +512,37 @@
+ 
+ 
+ 	
+-	
++   public function createStoreCategories($store_code) {
++      // let's see which productsets this store has.
++      $this->load->model('user/productset');
++      $productsets = $this->model_user_productset->getProductsetsForStoreCode($store_code);
++      $categories = array();
++      foreach ($productsets as $productset) {
++         //echo $productset['productset_id'];
++         // Grab the default categories for this productset_id.
++         $sql = "select * from category where store_code='ZZZ' and productset_id='{$productset['productset_id']}'";
++         $query = $this->db->query($sql);
++
++         $category_sets[] = $query->rows;
++      }
++      // This will now take the default ZZZ categories and associate them to our newly created store.
++      foreach ($category_sets as $categories) {
++         foreach ($categories as $category) { 
++            $category_data['category_id'] = $category['category_id'];
++            $category_data['store_code'] = $store_code;
++            $category_data['phrasekey'] = $category['phrasekey'];
++            $category_data['parent_id'] = $category['parent_id'];
++            $category_data['sort_order'] = $category['sort_order'];
++            $category_data['date_added'] = date(ISO_DATETIME_FORMAT);
++            $category_data['date_modified'] = date(ISO_DATETIME_FORMAT);
++            $category_data['productset_id'] = $category['productset_id'];
++            $category_data['enabled'] = 1;
++            //print_r($category_data) . "<br/><br/>";
++            $this->db->add('category', $category_data);
++         }
++      }
++   }   
++
+ 	/*	appears to be not used anywhere
+ 	public function getTotalCategories () {
+ 	    
+Index: model/productset/product.php
+===================================================================
+--- model/productset/product.php	(revision 74)
++++ model/productset/product.php	(working copy)
+@@ -239,7 +239,16 @@
+ 	    
+ 	}
+ 	
+-	
++
++   public function getDefaultProductCategoryProductsetRelationships($productset_id) {
++      $sql = "select * from product_to_category where productset_id='{$productset_id}' AND store_code='ZZZ'"; 
++      $query = $this->db->query($sql);
++      if (count($query->rows) > 0) {
++         return $query->rows;
++      } else {
++         return null; // let the caller know early!
++      }
++   }
+ }
+ 
+-?>
+\ No newline at end of file
++?>
+Index: model/store/product.php
+===================================================================
+--- model/store/product.php	(revision 74)
++++ model/store/product.php	(working copy)
+@@ -757,7 +757,7 @@
+ 				AND		J.id IS NULL
+ 
+ 	    ";	    
+-
++//echo $sql;
+ 		$result = $this->db->query($sql);
+ 		
+ 		foreach ($result->rows as $row) {
+@@ -774,7 +774,9 @@
+ 	    if (!$store_code) return;
+ 	    
+ 	    $product_ids = $this->getUnjunctionedProductIDs($store_code);
+-
++//echo "::createUnjunctionedProductRecords::<br/>";
++//print_r($product_ids);
++//exit;
+         $store_result = $this->db->get_multiple('store', "code = '{$store_code}'");
+         $creator_user_id = $store_result[0]['user_id'];
+ 
+Index: model/tool/export.php
+===================================================================
+--- model/tool/export.php	(revision 107)
++++ model/tool/export.php	(working copy)
+@@ -37,6 +37,8 @@
+ 
+ 
+ 	function uploadProducts( &$reader, &$database, $store_codes ) {
++
++      $productset_ids = array();
+ 	   //echo ' uploading ... ';
+ 		// find the default language id
+ 		$language =& Registry::get('language');
+@@ -50,6 +52,7 @@
+ 		//foreach ($data['cells'] as $row) {
+ 			
+ 		$this->load->model('user/productset');
++      /* Getting authorized productset based on user logged in */
+ 		$authorized_productsets = (array) $this->model_user_productset->getProductsets(null, $this->user->getID());
+ 		foreach ($authorized_productsets as $authorized_productset) {
+ 		    $authorized_productset_codes[] = $authorized_productset['code'];
+@@ -104,7 +107,6 @@
+ 			$category_phrasekey = ($row[8] != '') ? $row[8] : "";
+ 			$category_phrasekey = $this->clean($category_phrasekey, true);
+ 			$product['category_phrasekey'] = $category_phrasekey;
+-
+ 			
+ 			$product['main_image_filename'] = ($row[9] != '') ? $row[9] : "";
+ 			
+@@ -129,12 +131,26 @@
+ 			
+ 			$product['safetywarning_smallball_flag'] = ($row[17] != '') ? '1' : "";
+ 
++         // This can be a comma separated list of catalogs (productsets).
++         // If there is a list here then it implies that the product is in multiple catalogs (productsets).
+ 			$productset_codes = ($row[18] != '') ? $row[18] : "";    
+ //echo $productset_codes;
+ 			$productset_codes = $this->clean($productset_codes, FALSE);
+ 			$product['productset_codes'] = ($productset_codes=='') ? array() : explode( ",", $productset_codes );
+ 
+-//print_r($product['productset_codes']);
++    	   // Set up a productset_id array for passing around:
++    	   foreach ((array)$product['productset_codes'] as $productset_code) {
++            if (!empty($productset_code)) {
++    	         $productset_id = $this->model_user_productset->getProductsetIDFromCode($productset_code);
++               if ($productset_id) {
++                  if (!in_array($productset_id, $productset_ids)) {
++                     $productset_ids[] = $productset_id;
++                  }
++               }
++            }
++         }
++//echo "Before storeProductIntoDatabase call:<br/>";
++//print_r($productset_ids);
+ //exit;
+ 			$related_products_item_numbers = ($row[19] != '') ? $row[19] : "";    
+ 			$related_products_item_numbers = trim( $this->clean($related_products_item_numbers, FALSE) );
+@@ -151,7 +167,7 @@
+ 			$product_variant = $this->clean($product_variant, true);
+ 			$product['product_variant'] = $product_variant;	
+ 			
+-			$result = $this->storeProductIntoDatabase( $database, $product, $store_codes, $authorized_productset_codes );
++			$result = $this->storeProductIntoDatabase( $database, $product, $store_codes, $authorized_productset_codes, $productset_ids );
+ 
+ 			if (!empty($result['errors'])) {
+     		    $overall_result['errors'][$product['product_id']] = $result['errors'];
+@@ -176,12 +192,19 @@
+ 		}		
+ 		
+ 		if ($_SESSION['products_importer']['import_type']['selected'] == 'products_B') {
+-	               
++
++//echo "After storeProductIntoDatabase call:<br/>";              
++//print_r($productset_ids);
+             // first we create new Categories, and assign (or update) parents    
+             foreach ($distinct_category_phrasekeys as $phrasekey=>$nothing) {            
++//echo "Create new category: " . $phrasekey;
+                 foreach ($store_codes as $store_code) {
+-                    $this->model_catalog_category->add_category_record_if_not_exists($store_code, $phrasekey, false, $product['productset_codes']);
+-                    $this->model_catalog_category->assign_category_record_parent($store_code, $phrasekey);
++//echo " for store_code: " . $store_code;
++                    foreach ($productset_ids as $productset_id) {
++//echo " for productset_id: " . $productset_id;
++                       $this->model_catalog_category->add_category_record_if_not_exists($store_code, $phrasekey, false, $productset_id);
++                       $this->model_catalog_category->assign_category_record_parent($store_code, $phrasekey, false, $productset_id);
++                    }
+                 }
+             }
+ 		}
+@@ -195,7 +218,7 @@
+ 	}	
+ 	
+ 
+-	function storeProductIntoDatabase( &$database, $product, $store_codes, $authorized_productset_codes ) {
++	function storeProductIntoDatabase( &$database, $product, $store_codes, $authorized_productset_codes, $productset_ids ) {
+ 
+ 		// find the default language id
+ 		$language =& Registry::get('language');
+@@ -490,30 +513,52 @@
+     	        }	
+     
+             		        
+-                /*
+-                 * PRODUCTSET-PRODUCTS
+-                 */
+-    	        
+-                $this->db->delete('productset_product', $where_clause);
+-                
++              /*
++               * PRODUCTSET-PRODUCTS
++               */
++              // Clean up first.
++              // KMC
++              // We should have a productset_id in this where clause, so I added it!!
++    	        foreach ((array)$productset_ids as $productset_id) {
++                 if (!empty($productset_id)) {
++                       $where_clause .= " AND productset_id='{$productset_id}'";
++                 }
++//echo $where_clause;
++                 $this->db->delete('productset_product', $where_clause);
++              }
++//exit;                
++    	        foreach ((array)$productset_ids as $productset_id) {
++                 if (!empty($productset_id)) {
++    	               $productset_product_data['productset_id'] = $productset_id;
++    	               $productset_product_data['product_id'] = $product_id;
++    	               $productset_product_data['creator_user_id'] = $this->user->getID();
++    	               $productset_product_data['created_datetime'] = date(ISO_DATETIME_FORMAT);
++    	               $this->db->add('productset_product', $productset_product_data, true);
++                 }
++    	        }	
++
++              /* Above I (KMC) added the productset_ids array --
+     	        foreach ((array)$product['productset_codes'] as $productset_code) {
+-                  if (!empty($productset_code)) {
++                 if (!empty($productset_code)) {
+     	               $productset_product_data['productset_id'] = $this->model_user_productset->getProductsetIDFromCode($productset_code);
+     	               $productset_product_data['product_id'] = $product_id;		            
+     	               $productset_product_data['creator_user_id'] = $this->user->getID();
+     	               $productset_product_data['created_datetime'] = date(ISO_DATETIME_FORMAT);
+     	               $this->db->add('productset_product', $productset_product_data, true);
+-                  }
++                 }
+     	        }	
++               */
+ 	        }
+ 	        
++	        // Breakout store_codes into a comma separated:  'HLL','PIG','ALM'... 
++           foreach ($store_codes as $store_code) {
++              $store_codes_quoted[] = "'{$store_code}'";
++           }
++//print_r($store_codes_quoted);
++//exit;
++           $store_codes_commasep = implode(', ', $store_codes_quoted);	        
+ 	        
+-            foreach ($store_codes as $store_code) {
+-                $store_codes_quoted[] = "'{$store_code}'";
+-            }
+-            $store_codes_commasep = implode(', ', $store_codes_quoted);	        
+-	        
+-	        
++
+ 	        if ($_SESSION['products_importer']['import_type']['selected'] == 'products_D') {
+ 	                        
+                 /*
+@@ -545,9 +590,7 @@
+     		            if ($related_product_id) {
+ 
+     		                $related_products_insert_sql_subparts[] = "('{$store_code}', '{$product_id}', '{$related_product_id}')";    		                
+-    		                
+     		            }
+-    		            
+     		        }
+     
+                 }
+@@ -563,8 +606,23 @@
+ 	        }
+             
+             
+-            if ($_SESSION['products_importer']['import_type']['selected'] == 'products_C') {
++           if ($_SESSION['products_importer']['import_type']['selected'] == 'products_C') {
+ 
++              // 06/24/2010
++   	        // KMC do the same break out for the productset_ids  '31','32','33'...
++              foreach ($productset_ids as $productset_id) {
++                 $productset_ids_quoted[] = "'{$productset_id}'";
++              }
++//print_r ($productset_ids_quoted);
++//exit;
++              if (count($productset_ids_quoted) == 1) { 
++                 $productset_ids_commasep = $productset_ids_quoted[0];
++              } else {
++                 $productset_ids_commasep = implode(', ', $productset_ids_quoted);
++              }
++//echo $productset_ids_commasep;
++//exit;
++
+     	        /*
+     	         * CATEGORIES
+     	         */
+@@ -573,38 +631,36 @@
+                 	DELETE FROM		product_to_category
+                 	WHERE			1         	
+                 		AND			product_id = '{$product_id}'
+-                		AND			store_code IN ({$store_codes_commasep})                		
++                		AND			store_code IN ({$store_codes_commasep}) 
++                     AND         productset_id IN ({$productset_ids_commasep})
+                 ";
+                 $this->db->query($sql);
+             
+-        
+                 // Product-Category assignments
+                 
+                 $product_to_category_insert_sql = "
+-                	INSERT DELAYED INTO		product_to_category (store_code, product_id, category_id)
++                	INSERT DELAYED INTO		product_to_category (store_code, product_id, category_id, productset_id)
+                 	VALUES	
+                 ";
+ 
+                 unset($product_to_category_insert_sql_subparts);
+              
+                 foreach ($store_codes as $store_code) {
++                  foreach ($productset_ids as $productset_id) {
++    	               $category_id = $this->model_catalog_category->get_id_from_phrasekey($store_code, $product['category_phrasekey'], $productset_id);
++
++    	               if ($category_id) {
++    	                   $product_to_category_insert_sql_subparts[] = "('{$store_code}', '{$product_id}', '{$category_id}', '{$productset_id}')";    
++    	               }
++                  }
++               }
+                 
+-    	            $category_id = $this->model_catalog_category->get_id_from_phrasekey($store_code, $product['category_phrasekey']);
+-   	            
+-    	            if ($category_id) {
+-    	                $product_to_category_insert_sql_subparts[] = "('{$store_code}', '{$product_id}', '{$category_id}')";    
+-    	            }
+-    
+-                }
++               if (!empty($product_to_category_insert_sql_subparts)) {
+                 
+-                if (!empty($product_to_category_insert_sql_subparts)) {
+-                
+                     $product_to_category_insert_sql .= implode(', ', $product_to_category_insert_sql_subparts);
+         		    
+                     $this->db->query($product_to_category_insert_sql);
+-
+-                }                         
+-                            
++               }                         
+             }
+ 	        
+           ++$_SESSION['products_importer']['count'];
+@@ -616,8 +672,6 @@
+ 		} else {
+ 		    return $result;
+ 		}		    
+-		    
+-		
+ 	}
+ 
+ 
+@@ -1121,7 +1175,7 @@
+ 	}
+ 
+ 
+-	function upload( $filename ) {
++	function upload( $filename, $core_dataset ) {
+ 	    
+ 	    $_SESSION['products_importer']['count'] = 0;
+ 	    
+@@ -1165,11 +1219,19 @@
+ 			return FALSE;
+ 		}
+ 		*/
+-        $this->load->model('user/store');
+-        $store_codes = $this->model_user_store->get_store_codes($this->user->getID());		
+-        // KMC hack, pick the "SESSION" store code.
+-        //$store_codes = array($_SESSION['store_code']);
+-        //var_dump($store_codes); exit;
++      $this->load->model('user/store');
++      $store_codes = $this->model_user_store->get_store_codes($this->user->getID());		
++
++      // KMC new category workings, if we are uploading a core_dataset then we associate all this new
++      // data with store_code = 'ZZZ'.
++      if ($core_dataset) { 
++         unset($store_codes);
++         $store_codes[] = 'ZZZ';
++      };  
++      // KMC hack, pick the "SESSION" store code.
++      //$store_codes = array($_SESSION['store_code']);
++//print_r($store_codes); 
++//exit;
+ 		
+ 		if ($_SESSION['products_importer']['import_type']['selected'] == 'products_A' 
+     		|| $_SESSION['products_importer']['import_type']['selected'] == 'products_B' 
+Index: model/user/productset.php
+===================================================================
+--- model/user/productset.php	(revision 74)
++++ model/user/productset.php	(working copy)
+@@ -269,9 +269,17 @@
+ 	    
+ 	    return (boolean) $result->row['productset_id'];
+ 	    
+-	}
++   }
++
++   public function getProductsetsForStoreCode($store_code) {
++      $this->load->model('user/store');
++      $store_id = $this->model_user_store->getStoreIDFromCode($store_code);
++
++      $psets = $this->db->get_multiple('store_productsets', "store_id = '{$store_id}'"); 
++      // careful, we're returning all columns.
++      return $psets;
++   }
+ 	
+-	
+ }
+ 
+ ?>
+Index: model/user/store.php
+===================================================================
+--- model/user/store.php	(revision 111)
++++ model/user/store.php	(working copy)
+@@ -127,14 +127,45 @@
+   		    
+       		    $store_productsets_data['productset_id'] = $productset_id;
+       		    $this->db->add('store_productsets', $store_productsets_data);
+-  		    
+   		    }
+-  		    
+   		}
+ 
++      // KMC : New 06/28/2010 :
++      $this->buildNewStoreData($data['code'], $store_productsets);   
++//exit;
+       $this->buildSiteTemplatePieces($data['code'], $data['user_id']);
+ 	}
+ 
++   private function buildNewStoreData($store_code, $store_productsets) {
++echo "in buildNewStoreData : " . $store_code;
++      // 1. populates our store_product table.
++      //$this->load->model('store/product');
++      //$this->model_store_product->createUnjunctionedProductRecords($store_code);
++
++      // 2. populates our category table.
++      $this->load->model('catalog/category');
++      $this->model_catalog_category->createStoreCategories($store_code);
++
++      // 3. populates our product_to_category table.
++      $this->load->model('productset/product');
++      foreach ($store_productsets as $productset_id) {
++         // Grab our default 'ZZZ' store to help build the category_id, product_id, productset_id relationship.
++         $productset = $this->model_productset_product->getDefaultProductCategoryProductsetRelationships($productset_id);
++
++         foreach ($productset as $product) {
++            $clean_sql = "DELETE FROM product_to_category
++                          WHERE  1           
++                          AND    product_id = '{$product_id}'
++                          AND    store_code = '{$store_code}' 
++                          AND    productset_id = '{$productset_id}'";
++            $this->db->query($sql);
++      
++            // Product-Category assignments
++            $product_to_category_insert_sql = "INSERT DELAYED INTO product_to_category (store_code, product_id, category_id, productset_id) VALUES ('{$store_code}', '{$product['product_id']}', '{$product['category_id']}', '{$productset_id}')";    
++         }
++      }
++   }
++
+    private function buildSiteTemplatePieces($store_code, $user_id) {
+       //$level_query = $this->db->query("SELECT membershiptier_id FROM `" . DB_PREFIX . "user` WHERE user_id='" . $user_id . "'");
+       //$store_level = $level_query->row['membershiptier_id'];
+@@ -196,8 +227,8 @@
+ 		$this->db->query("DELETE FROM " . DB_PREFIX . "store_productsets WHERE store_id = '" . (int)$store_id . "'");		
+ 	   
+       $store_info = $this->getStore($store_id); 
+-      //KMC new category management.
+-      $this->db->query("UPDATE ". DB_PREFIX . "category_to_productset SET enabled=0 WHERE store_code='".$store_info['code']."'");
++      //KMC new category management, disabled all categories first.
++      $this->db->query("UPDATE ". DB_PREFIX . "category SET enabled=0 WHERE store_code='".$store_info['code']."'");
+ 
+ 		$data['store_productsets'] = array_merge((array)$data['store_productsets'], (array) $_SESSION['user/store_form/restricted_checked_productsets']);
+ 	    
+@@ -207,7 +238,11 @@
+   		    $store_productsets_data['productset_id'] = $productset_id;
+   		    $this->db->add('store_productsets', $store_productsets_data);
+           //KMC new category management.
+-          $this->db->query("UPDATE ". DB_PREFIX . "category_to_productset SET enabled=1 WHERE store_code='".$store_info['code']."' AND productset_id='".$productset_id."'");
++
++          // TODO, make sure that we have categories defined for this productset, else we have to add them based on our ZZZ store which holds the defaults.
++
++          // Update existing records.
++          $this->db->query("UPDATE ". DB_PREFIX . "category SET enabled=1 WHERE store_code='".$store_info['code']."' AND productset_id='".$productset_id."'");
+   		}
+ 
+ 		unset($data['store_productsets']);
+Index: view/template/tool/export.tpl
+===================================================================
+--- view/template/tool/export.tpl	(revision 74)
++++ view/template/tool/export.tpl	(working copy)
+@@ -1,107 +1,153 @@
+-<?php if ($error_warning) { ?>-	<?php if (is_array($error_warning['errors'])): ?>-		<?php foreach ($error_warning['errors'] as $product_id => $error_package): ?>-			<?php foreach ($error_package as $error_index => $error_message): ?>-				<div class="warning">Product ID <?php echo $product_id ?> : <?php echo $error_message; ?></div>-			<?php endforeach; ?>-		<?php endforeach; ?>-	<?php else: ?>-		<div class="warning"><?php echo $error_warning; ?></div>-	<?php endif; ?>-<?php } ?>-<?php if ($success) { ?>-<div class="success"><?php echo $success; ?></div>-<?php } ?>-<div class="heading">-  <h1><?php echo $heading_title; ?></h1>-  <div class="buttons">-  	<a onclick="$('#form').submit();" class="button"><span class="button_left button_restore"></span><span class="button_middle"><?php echo $button_import; ?></span><span class="button_right"></span></a>-  	<?php /* ?><a onclick="location='<?php echo $export; ?>'" class="button"><span class="button_left button_backup"></span><span class="button_middle"><?php echo $button_export; ?></span><span class="button_right"></span></a><?php */ ?>-   </div>-</div>-<p><?php echo $entry_description; ?></p>-<div class="tabs"><a tab="#tab_general"><?php echo $tab_general; ?></a></div>-<form action="<?php echo $action; ?>" method="post" enctype="multipart/form-data" id="form">-  <div id="tab_general" class="page">-    <table class="form">-      <tr>-        <td style="width:220px;">Import type:<span class="help">Please import in sequence : A, B, C, D, E</span></td>-        <td>	 -        	<div>-            	<input type="radio" name="import_type"  value="products_A"  id="import_type_products_A" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_A_checked']; ?> /> -            	<strong style="color:White; background-color:Blue">A</strong> &nbsp; <label for="import_type_products_A"><strong>Manufacturers</strong></label>-            </div>-        	<div>-            	<input type="radio" name="import_type"  value="products_B"  id="import_type_products_B" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_B_checked']; ?> /> -            	<strong style="color:White; background-color:Blue">B</strong> &nbsp; <label for="import_type_products_B"><strong>Product Categories</strong></label>-        	</div>-        	<div>-            	<input type="radio" name="import_type"  value="products_C"  id="import_type_products_C" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_C_checked']; ?> /> -            	<strong style="color:White; background-color:Blue">C</strong> &nbsp; <label for="import_type_products_C"><strong>Products</strong></label>-        	</div>   -        	<div>-            	<input type="radio" name="import_type"  value="products_D"  id="import_type_products_D" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_D_checked']; ?> />-            	<strong style="color:White; background-color:Blue">D</strong> &nbsp; <label for="import_type_products_D"><strong>Products - Related Products</strong></label>-        	</div> -        	<div>-            	<input type="radio" name="import_type"  value="options"   id="import_type_options" <?php echo $_SESSION['products_importer']['import_type']['import_type_options_checked']; ?> /> -            	<strong style="color:White; background-color:Red">E</strong> &nbsp; <label for="import_type_options"><strong>Product Options</strong></label>-        	</div>        	-        </td>-      </tr>    -      <tr>-        <td style="width:220px;"><?php echo $entry_restore; ?></td>-        <td><input type="file" name="upload" /></td>-      </tr>      -      <tr>-      	<td colspan="9">-      		<br>-          	Here is the column sequence and data format for <strong>Products</strong> (use the same one file for Import Types <strong style="color:White; background-color:Blue">A</strong>, <strong style="color:White; background-color:Blue">B</strong>, <strong style="color:White; background-color:Blue">C</strong> and <strong style="color:White; background-color:Blue">D</strong>):-          	<pre>-            	1 	Product ID (Serial Number)-            	2 	Item Number-            	3 	Name-            	4 	Description-            	5 	Price-            	6 	Min Gradelevel - Max Gradelevel (hyphen-separated)-            	7	Keywords (comma-separated)-            	8 	Category names, hierarchical (period-separated)-            	9	Main Image Filename-                10 	Alternative Main Image Thumbnail Filename-                11 	Additional Image Filenames (comma-separated)-                12 	Media Filenames (comma-separated)-                13 	Manufacturer Name-                14 	Safety - Choking (use any character vs. blank)-                15 	Safety - Balloon (use any character vs. blank)-                16 	Safety - Marbles (use any character vs. blank)-                17 	Safety - Small Ball (use any character vs. blank)-                18 	Catalog (Dataset) Code(s) (comma-separated)-                19 	Item Numbers of related Products (comma-separated)-                20 	Product Variant Group Name (optional)-                21 	Product Variation (e.g. Color, leave blank if not using Variant Group)-                22 	Product Variant (e.g. Red, leave blank if not using Variant Group)-          	</pre>-          	Corresponding image and media files need to be uploaded via FTP to the relevant directories.-          	<br />-          	The "Alternative Main Image Thumbnail Filename" must be uploaded to the "alt_product_thumbs" subfolder.-      	</td>-      </tr>-      <tr>-      	<td colspan="9">-      		<br><br>-          	Here is the column sequence and data format for <strong>Product Options</strong> (Import Type <strong style="color:White; background-color:Red">E</strong>):-          	<pre>-            	1 	Product ID (Serial Number)-                2 	Option Name (e.g. Color)-                3 	Option Value (e.g. Red)-                4 	Option Price Prefix (either '+' or '-', default is '+' if left blank)-                5 	Option Price (increment over base price; leave blank if Option does not change base price)-          	</pre>-      	</td>-      </tr>      -    </table>-  </div>-</form>-<script type="text/javascript"><!---$.tabs('.tabs a'); -//--></script>
+\ No newline at end of file
++<?php if ($error_warning) { ?>
++<?php if (is_array($error_warning['errors'])): ?>
++<?php foreach ($error_warning['errors'] as $product_id => $error_package): ?>
++<?php foreach ($error_package as $error_index => $error_message): ?>
++<div class="warning">
++  Product ID <?php echo $product_id ?> : <?php echo $error_message; ?>
++</div>
++<?php endforeach; ?>
++<?php endforeach; ?>
++<?php else: ?>
++<div class="warning">
++  <?php echo $error_warning; ?>
++</div>
++<?php endif; ?>
++<?php } ?>
++<?php if ($success) { ?>
++<div class="success">
++  <?php echo $success; ?>
++  <?php echo 'Just imported: <strong style="color:White; background-color:Blue">' . substr($_SESSION['products_importer']['import_type']['selected'],strlen($_SESSION['products_importer']['import_type']['selected'])-1,1) . '</strong>'; ?>
++  <?php echo ' : File: ' . $_SESSION['uploaded_filename']; ?>
++</div>
++<?php } ?>
++<div class="heading">
++  <h1>
++    <?php echo $heading_title; ?>
++  </h1>
++  <div class="buttons">
++    <a onclick="$('#form').submit();" class="button">
++      <span class="button_left button_restore"></span>
++      <span class="button_middle">
++        <?php echo $button_import; ?>
++      </span>
++      <span class="button_right"></span>
++    </a>
++    <?php /* ?>
++    <a onclick="location='"
++      <?php echo $export; ?>'" class="button"><span class="button_left button_backup"></span><span class="button_middle">
++        <?php echo $button_export; ?>
++      </span><span class="button_right"></span>
++    </a>
++    <?php */ ?>
++  </div>
++</div>
++<p>
++  <?php echo $entry_description; ?>
++</p>
++<div class="tabs">
++  <a tab="#tab_general">
++    <?php echo $tab_general; ?>
++  </a>
++</div>
++<form action=""
++  <?php echo $action; ?>" method="post" enctype="multipart/form-data" id="form">  <div id="tab_general" class="page">
++    <table class="form">
++      <tr>
++        <td>
++           <strong>Is this a core dataset upload?</strong>
++           <span class="help">Not associated with any 1 store, will be used for multiple stores.</span>
++        </td>
++        <td>
++           <input type="radio" name="core_dataset" value="Yes" <?php echo $_SESSION['core_dataset']['Yes']?>>Yes</input><br/>
++           <input type="radio" name="core_dataset" value="No" <?php echo $_SESSION['core_dataset']['No']?>>No</input>
++        </td>
++      </tr>
++      <tr>
++        <td style="width:220px;">
++          <strong>Import type:</strong><span class="help">Please import in sequence : A, B, C, D, E</span>
++        </td>
++        <td>
++          <div>
++            <input type="radio" name="import_type"  value="products_A"  id="import_type_products_A" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_A_checked']; ?> />             	<strong style="color:White; background-color:Blue">A</strong> &nbsp; <label for="import_type_products_A">
++              <strong>Manufacturers</strong>
++            </label>
++          </div>
++          <div>
++            <input type="radio" name="import_type"  value="products_B"  id="import_type_products_B" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_B_checked']; ?> />             	<strong style="color:White; background-color:Blue">B</strong> &nbsp; <label for="import_type_products_B">
++              <strong>Product Categories</strong>
++            </label>
++          </div>
++          <div>
++            <input type="radio" name="import_type"  value="products_C"  id="import_type_products_C" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_C_checked']; ?> />             	<strong style="color:White; background-color:Blue">C</strong> &nbsp; <label for="import_type_products_C">
++              <strong>Products</strong>
++            </label>
++          </div>
++          <div>
++            <input type="radio" name="import_type"  value="products_D"  id="import_type_products_D" <?php echo $_SESSION['products_importer']['import_type']['import_type_products_D_checked']; ?> />            	<strong style="color:White; background-color:Blue">D</strong> &nbsp; <label for="import_type_products_D">
++              <strong>Products - Related Products</strong>
++            </label>
++          </div>
++          <div>
++            <input type="radio" name="import_type"  value="options"   id="import_type_options" <?php echo $_SESSION['products_importer']['import_type']['import_type_options_checked']; ?> />             	<strong style="color:White; background-color:Red">E</strong> &nbsp; <label for="import_type_options">
++              <strong>Product Options</strong>
++            </label>
++          </div>
++        </td>
++      </tr>
++      <tr>
++        <td style="width:220px;">
++          <?php echo $entry_restore; ?>
++        </td>
++        <td>
++          <input type="file" name="upload" />
++        </td>
++      </tr>
++      <tr>
++        <td colspan="9">
++          <br>
++            Here is the column sequence and data format for <strong>Products</strong> (use the same one file for Import Types <strong style="color:White; background-color:Blue">A</strong>, <strong style="color:White; background-color:Blue">B</strong>, <strong style="color:White; background-color:Blue">C</strong> and <strong style="color:White; background-color:Blue">D</strong>):          	
++<pre>
++1 	Product ID (Serial Number)
++2 	Item Number
++3 	Name
++4 	Description
++5 	Price
++6 	Min Gradelevel - Max Gradelevel (hyphen-separated)
++7	Keywords (comma-separated)
++8 	Category names, hierarchical (period-separated)
++9	Main Image Filename
++10      Alternative Main Image Thumbnail Filename
++11 	Additional Image Filenames (comma-separated)                
++12 	Media Filenames (comma-separated)                
++13 	Manufacturer Name                
++14 	Safety - Choking (use any character vs. blank)                
++15 	Safety - Balloon (use any character vs. blank)                
++16 	Safety - Marbles (use any character vs. blank)                
++17 	Safety - Small Ball (use any character vs. blank)                
++18 	Catalog (Dataset) Code(s) (comma-separated)                
++19 	Item Numbers of related Products (comma-separated)                
++20 	Product Variant Group Name (optional)                
++21 	Product Variation (e.g. Color, leave blank if not using Variant Group)                
++22 	Product Variant (e.g. Red, leave blank if not using Variant Group)          	
++</pre>          	Corresponding image and media files need to be uploaded via FTP to the relevant directories.          	<br />          	The "Alternative Main Image Thumbnail Filename" must be uploaded to the "alt_product_thumbs" subfolder.
++          </td>
++      </tr>
++      <tr>
++        <td colspan="9">
++          <br>
++            <br>
++              Here is the column sequence and data format for <strong>Product Options</strong> (Import Type <strong style="color:White; background-color:Red">E</strong>):          	
++<pre>
++1 	Product ID (Serial Number)                
++2 	Option Name (e.g. Color)                
++3 	Option Value (e.g. Red)                
++4 	Option Price Prefix (either '+' or '-', default is '+' if left blank)                
++5 	Option Price (increment over base price; leave blank if Option does not change base price)          	</pre>
++            </td>
++      </tr>
++    </table>
++  </div>
++</form>
++<script type="text/javascript">
++  <!--$.tabs('.tabs a'); //-->
++</script>

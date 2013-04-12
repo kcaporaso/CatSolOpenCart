@@ -1,0 +1,4 @@
+Calling with RAND() for getting products by mfg_id.
+--This line, and those below, will be ignored--
+
+M    manufacturer.php

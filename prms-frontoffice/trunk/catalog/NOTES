@@ -1,0 +1,38 @@
+
+
+
+We need to copy these over when creating a new "silver" level store:
+I will automate this once we go into "slow" mode.
+
+Put a store_code prefix in front of each file:
+
+1. Icons for headers:
+ - icon_category.png 
+ - icon_bestsellers.png
+ - icon_brand.png
+ - icon_information.png
+ - icon_search.png
+
+2. TPL / Stylesheet
+ - common/header.tpl
+ - stylesheet/STORE_stylesheet.php
+
+
+:: MANUAL PIECES ::
+3. For staging on catsolonline.com, setup a new A record pointing to :  storename.catsolonline.com
+   Then add that to apache so it will handle the staging name.
+
+4. Add a store in the backoffice as a Top Administrator
+   Make sure you create a User for the store first as the owner of the store must be designated.
+
+5. Import each Catalog Data set to that store as a Top Administrator.
+
+
+:: TODO ::
+
+:: FINISHED ::
+WISH LIST coming soon page.  route=??
+pigtails ssl (4/15/2010)
+getSpecials fix
+pigtails home page
+Smartypantzs

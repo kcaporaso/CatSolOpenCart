@@ -1,0 +1,10 @@
+Aug13 big fixes/changes for: Gift Certs, Major pricing fixes for cart/catalog, Email Cart fixes, remove item backoffic order screens.
+--This line, and those below, will be ignored--
+
+M    library/cart.php
+M    library/currency.php
+M    library/tax.php
+M    library/customer.php
+M    library/image.php
+M    library/session.php
+M    library/db.php

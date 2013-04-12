@@ -1,0 +1,50 @@
+#content .heading{clear:both;}
+/* Subcategory Listing on product pages */
+.subcategory_list{background-color:#EFEFEF; border:solid #ddd; border-width:0 1px 1px 1px; min-width:575px; float:left; padding:0 0 5px 0; margin-bottom:5px;
+}
+.subcategory_list ul{margin:0 1% 5px 1%; padding:0; width:98%; float:left; list-style:none;}
+.subcategory_list li{margin:0; padding:1px 1%; width:30%; float:left;}
+.subcategory_list li a{text-decoration:none; color:#000000; font-weight:bold;}
+.subcategory_list a.slidetoggle{padding:10px; color:#000000; text-decoration:none;}
+
+/* Account Login Page boxes */
+.account_box{background:#EFEFEF; border: 1px solid #DDDDDD; padding: 10px; min-height: 175px;
+   -moz-border-radius: 8px; -webkit-border-radius: 8px; border-radius: 8px;
+}
+#account_new_customer{float: left; display: inline-block; width: 49%;}
+#account_returning_customer{float: right; display: inline-block; width: 49%;}
+
+/* Fieldset (and emulated fieldset) styles*/
+.fieldset{background:#EFEFEF; border: 1px solid #DDDDDD; padding:10px; margin-bottom:10px;
+   -moz-border-radius: 8px; -webkit-border-radius: 8px; border-radius: 8px;
+}
+
+#module_mfg .middle{padding:0;}
+
+/* Product Page boxes  */
+.product_addcart_container{background:#EFEFEF; border: 1px solid #DDDDDD; padding:5px 10px; text-align:center;
+   -moz-border-radius: 8px; -webkit-border-radius: 8px; border-radius: 8px;
+}
+.product_addcart_container .button_addlist_wish{}
+.product_addcart_container .button_addlist_wish img{vertical-align:middle;}
+.product_addcart_container .button_addlist_shopping{}
+.product_addcart_container .button_addlist_shopping img{vertical-align:middle;}
+.product_variant_table{width: 100%; border-collapse: collapse;}
+.product_variant_table td{text-align:left;padding:1px;}
+.product_variant_table td+td{text-align:right;}
+.product_variant_table td[align=center]{text-align:center;}
+.product_variant_table b{color:#0050A3;}
+.product_variant_item_number{}
+
+.product_variant_savings_text{color:#0050A3; font-size:.9em;}
+.product_variant_savings_price{color:green; font-size:.9em;}
+.product_variant_price_discount{color:red;}
+span.product_variant_price{}
+del.product_variant_price{}
+
+.new_list_container{text-align:left;border-top:1px dashed #DDDDDD;padding-top:3px;}
+.existing_list_container{text-align:left;border-top:1px dashed #DDDDDD;padding-top:3px;}
+
+
+a.link_select_options, a.link_select_options:visited{color:red;}
+a.link_more_info, a.link_more_info:visited{color:red;}

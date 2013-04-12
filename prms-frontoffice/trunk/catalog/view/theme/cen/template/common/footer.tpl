@@ -1,0 +1,5 @@
+<p>Copyright &copy; 2009-<?php echo date('Y')?> All Rights Reserved. Catalog Solutions, Inc.</p>
+<p><a href="<?php echo $contact; ?>">Customer Service</a> | <a href="">Catalog Request</a> | <a href="<?php echo $typeaheadorderform; ?>">Quick Shop</a> | <a href="<?php echo $contact; ?>">Email Signup</a> | <a href="<?php echo $account; ?>">My Account</a></p>
+<p class="longlinks"><a href="<?php echo $home; ?>">Home</a> | <a href="<?php echo $cataloghome; ?>">Shop By Category</a> | <a href="<?php echo $special; ?>">Sale</a> | <a href="">Resource Center</a> | <a href="<?php echo $contact; ?>">Email Signup</a></p>
+<p>Sorry, but we are not responsible for typographical errors.  We reserve the right to correct any errors in pricing.<br />This catalog may contain products with choking hazards, please read the warning statement for further information.</p>
+<div align="center" style="padding:10px;"><a href="#"><img src="catalog/view/theme/default/image/custom/CEN/facebook.png" alt="" width="166" height="50" /></a><a href="#"><img src="catalog/view/theme/default/image/custom/CEN/twitter.png" alt="" width="126" height="50" /></a></div>

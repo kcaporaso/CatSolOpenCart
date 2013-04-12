@@ -1,0 +1,124 @@
+/* Calendar */
+#calendar {
+	margin: 0px;
+	color: #000000;
+}
+
+#calendar #month_name {
+	margin: 7px 20px 5px 20px;
+	border: 2px outset #C2DBFB;
+	padding: 2px 0px 2px 0px;
+	background-color: #DCEAFD;
+	font-weight: bold;
+	color: #000000;
+	text-align: center;
+}
+
+#calendar a {
+	display: block;
+	font-weight: bold;
+	text-decoration: none;
+	color: #000000;
+	cursor: pointer;
+}
+
+#calendar a:hover {
+	color: #999999;
+}
+
+#calendar table {
+	width: 100%;
+	background-color: #DCEAFD;
+	border: 2px outset #C2DBFB;
+	text-align: center;
+}
+
+#calendar thead th {
+	border: none;
+	font-weight: bold;
+	color: #000000;
+	text-align: center;
+	padding: 2px 0px 2px 0px;
+}
+
+#calendar tbody td {
+	background-color: #E0ECFD;
+	border: 1px inset #C2DBFB;
+	color: #000000;
+	text-align: center;
+}
+
+#calendar tbody td.event_day {
+	background-color: #0157AB;
+	border: 1px inset #C2DBFB;
+	color: #FFFFFF;
+	text-align: center;
+}
+
+#calendar tbody td.event_day a {
+	color: #FFFFFF;
+	text-decoration: none;
+}
+
+#calendar tbody td.event_day a:hover {
+	color: #CCCCCC;
+}
+
+#calendar tfoot td {
+	font-weight: bold;
+	color: #000000;
+	padding: 2px 0px 2px 0px;
+}
+
+#calendar #prev {
+	text-align: left;
+	cursor: pointer;
+}
+
+#calendar #next {
+	text-align: right;
+	cursor: pointer;
+}
+
+#calendar #today {
+	background-color: #99AEED;
+	color: #000000;
+}
+
+#calendar #today a {
+	background-color: #0157AB;
+	color: #FFFFFF;
+}
+
+#clock input {
+	background-color: #DCEAFD;
+	border: 2px outset #C2DBFB;
+	padding: 2px 0px 1px 0px;
+	font-weight: bold;
+	color: #000000;
+	text-align: center;
+	width: 50%;
+}
+
+#clock .clock {
+	margin: 5px 0px 2px 0px;
+	text-align: center;
+}
+.events {
+	text-align: center;
+}
+.events h2 {
+	margin-top: 0px;
+	margin-bottom: 0px;
+}
+.events h4 {
+	margin-top: 10px;
+	margin-bottom: 10px;
+}
+.events p {
+	margin-top: 10px;
+	margin-bottom: 0px;
+}
+.details {
+	text-align: center;
+}

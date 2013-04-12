@@ -1,0 +1,140 @@
+/** http://iambari.com/2009/05/05/create-an-event-calendar-using-php-and-jquery/#comment-141 **/
+
+* {
+	/* old-style reset here :) */
+	border: 0px;
+	padding: 0px;
+}
+.calbody {
+	font-family: Helvetica;
+	background: white;
+	text-align: center;
+	background: url(../image/body.png) repeat-x;
+}
+.calbody h1 {
+	padding-top: 20px;
+	font-size: 26px;
+	color: #335;
+}
+
+.cal table {
+	border-collapse: separate;
+	border: 1px solid #9DABCE;
+	border-width: 0px 0px 1px 1px;
+	margin: 10px auto;
+	font-size: 20px;
+}
+.cal td, th {
+	width: 81px;
+	height: 81px;
+	text-align: center;
+	vertical-align: middle;
+	background: url(../image/cells.png);
+	color: #444;
+	position: relative;
+}
+th {
+	height: 30px;
+	font-weight: bold;
+	font-size: 14px;
+}
+td:hover, th:hover {
+	background-position: 0px -81px;
+	color: #222;
+}
+td.date_has_event {
+	background-position: 162px 0px;
+	color: white;
+}
+td.date_has_event:hover {
+	background-position: 162px -81px;
+}
+td.padding {
+	background: url(../image/calpad.jpg);
+}
+td.today {
+	background-position: 81px 0px;
+	color: white;
+}
+td.today:hover {
+	background-position: 81px -81px;
+}
+.events {
+	position: relative;
+}
+.events ul {
+	z-index: 2000;
+	text-align: left;
+	position: absolute;
+	display: block;
+	padding: 15px;
+	background: #E7ECF2 url(../image/popup.png) no-repeat;
+	color: white;
+	border: 1px solid white;
+	font-size: 15px;
+	width: 200px;
+	-moz-border-radius: 3px;
+	-khtml-border-radius: 3px;
+	-webkit-border-radius: 3px;
+	-border-radius: 3px;
+	list-style: none;
+	color: #444444;
+	-webkit-box-shadow: 0px 8px 8px #333;
+}
+.events li {
+	padding-bottom: 5px;
+}
+.events li span {
+	display: block;
+	font-size: 12px;
+	text-align: justify;
+	color: #555;
+}
+.events li span.title {
+	font-weight: bold;
+	color: #222;
+}
+/*KMC added, this is where we really need to call for the event description*/
+.events ul li span.desc {
+	text-align: left;
+	display: block;
+   visibility: visible;
+	padding: 10px;
+	background: #E7ECF2 url(../image/popup.png) no-repeat;
+	color: white;
+	border: 1px solid white;
+	font-size: 11px;
+	width: 180px;
+	list-style: none;
+	color: #444444;
+	-moz-border-radius: 3px;
+	-khtml-border-radius: 3px;
+	-webkit-border-radius: 3px;
+	-border-radius: 3px;
+	-webkit-box-shadow: 0px 8px 8px #333;
+}
+.events li span.desc {
+	z-index: 1200;
+	text-align: left;
+	display: block;
+	padding: 10px;
+	background: #E7ECF2 url(../image/popup.png) no-repeat;
+	color: white;
+	border: 1px solid white;
+	font-size: 11px;
+	width: 180px;
+	list-style: none;
+	color: #444444;
+	-moz-border-radius: 3px;
+	-khtml-border-radius: 3px;
+	-webkit-border-radius: 3px;
+	-border-radius: 3px;
+	-webkit-box-shadow: 0px 8px 8px #333;
+}
+th a {
+   text-decoration:none;
+   font-size:120%;
+   font-weight:bold;
+   color: #000;
+   outline-width:0;
+}
